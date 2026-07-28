@@ -1,0 +1,9 @@
+# Canonical cargo-xtask wiring (https://github.com/matklad/cargo-xtask):
+# `cargo xtask <task>` from the repo root. Aliases are inert for ordinary
+# `cargo build` invocations elsewhere in the tree (e.g. checks/c64-prg).
+#
+# Note: the manifest path is relative to the invocation directory, so
+# `cargo xtask` works from the repo root (the tasks themselves locate the
+# repo via CARGO_MANIFEST_DIR, not the cwd).
+[alias]
+xtask = "run --manifest-path xtask/Cargo.toml --"
