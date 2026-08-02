@@ -69,7 +69,7 @@ itself is built by the flake. You do not install Nix yourself — `cargo xtask i
 installs it for you.
 
 - **macOS**: Install the [Homebrew](https://brew.sh) package manager and use it to install `git` (`brew install git`); `curl` is already present. Install Rust with `rustup`. On Apple Silicon, Nix is installed automatically by the command below. On Intel Macs, [install Nix package manager](https://nixos.org/download/) manually first — there is no pinned installer binary for Intel macOS, so
-  `initenv` prints the official install command instead of installing it.
+  `initenv` prints the official install command instead of installing it. To run programs with `cargo run`, also `brew install vice` — nixpkgs has no macOS `vice`, so the dev shell can't provide the emulator on macOS (on Linux it does).
 - **Linux** (Debian/Ubuntu): `sudo apt install -y git curl`, then Rust via `rustup`. `sudo`
   is required — Nix installs a multi-user daemon.
 - **Windows**: Nix does not run natively. Install
@@ -158,8 +158,12 @@ cargo build --release
 `cargo check` works the same way, and rust-analyzer picks up the default target too, so it
 checks against `mos-c64-none` rather than your host.
 
-Run it in the VICE emulator (`nix shell nixpkgs#vice`):
-`x64sc target/mos-c64-none/release/hello-world`.
+Run it: `cargo run --release` launches the program in the VICE emulator. The crate's
+`.cargo/config.toml` sets a `runner`, so this runs `x64sc -autostart <the built PRG>` for you.
+(`x64sc` is VICE's cycle-accurate C64 emulator; VICE names one binary per machine, so there is
+no plain `vice` command.) On Linux the dev shell provides VICE; on macOS nixpkgs has no `vice`
+package, so install it once with `brew install vice` (see [Prerequisites](#prerequisites)). To
+launch it by hand instead: `x64sc target/mos-c64-none/release/hello-world`.
 
 To build your own program, copy that `.cargo/config.toml` into your crate and build the same
 way inside `nix develop`. Without the config — or from a crate that doesn't set a default

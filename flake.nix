@@ -106,7 +106,13 @@
               p.rust-mos
               p.mos-toolchain
               cargo-xasm
-            ];
+            ]
+            # VICE (x64sc) backs `cargo run` for C64 crates (their
+            # .cargo/config.toml sets `runner = ["x64sc", "-autostart"]`).
+            # nixpkgs' `vice` is marked Linux-only (meta.platforms has no
+            # darwin), so there it is a `brew install vice` prerequisite (see
+            # README); on Linux the dev shell provides it.
+            ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.vice ];
 
             RUST_TARGET_PATH = "${p.rust-mos}/targets";
             RUST_SRC_PATH = "${p.rust-mos}/lib/rustlib/src/rust/library";

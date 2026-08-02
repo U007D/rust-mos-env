@@ -17,7 +17,7 @@ target = "mos-c64-none"
 [unstable]
 build-std = ["core", "alloc"]
 
-# `cargo run` needs an emulator to launch the PRG. With VICE installed,
-# uncomment and adjust (cargo appends the built binary's path):
-# [target.mos-c64-none]
-# runner = ["x64sc", "-autostart"]
+# `cargo run` launches the built PRG in the VICE emulator. VICE ships one binary
+# per Commodore machine (x64sc = C64, x128 = C128, xvic = VIC-20, …).  Run using VICE.
+[target.mos-c64-none]
+runner = ["x64sc", "-autostart"]
