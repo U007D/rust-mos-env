@@ -1,4 +1,12 @@
-# Handoff: rust-mos C64 toolchain Nix flake
+# Handoff: rust-mos toolchain Nix flake
+
+> **HISTORICAL — do not rely on this document.** It is the original authoring-session
+> handoff, written before the toolchain was ever built. Since then the build works
+> (`nix flake check` passes), the repo was renamed `rust-mos-env`, and the layout was
+> restructured (`nix/` → `toolchain/`, the C64 example + check moved under `c64/`, and
+> `check-prg`/`check-rainbow-border` → `c64/check.nix` as `checks.<system>.c64-rainbow-border`).
+> The paths and status below are kept only as a record of the initial state. **See
+> [README.md](README.md) for the current layout and instructions.**
 
 ## Goal
 Nix flake building the **rust-mos** toolchain (rustc fork with LLVM-MOS 6502

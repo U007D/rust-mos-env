@@ -25,7 +25,7 @@
         "x86_64-darwin" # untested, hashes present
       ];
       eachSystem = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
-      pins = import ./nix/pins.nix;
+      pins = import ./toolchain/pins.nix;
     in
     {
       packages = eachSystem (
@@ -33,13 +33,13 @@
         let
           call = pkgs.lib.callPackageWith (pkgs // toolchain // { inherit pins; });
           toolchain = rec {
-            rust-mos-stage0 = call ./nix/stage0.nix { };
-            llvm-mos = call ./nix/llvm-mos.nix { };
-            llvm-mos-sdk = call ./nix/llvm-mos-sdk.nix { };
-            mos-toolchain = call ./nix/mos-toolchain.nix { };
-            rust-mos-src = call ./nix/rust-mos-src.nix { };
-            rust-mos = call ./nix/rust-mos.nix { };
-            check-vendor = call ./nix/check-vendor.nix { };
+            rust-mos-stage0 = call ./toolchain/stage0.nix { };
+            llvm-mos = call ./toolchain/llvm-mos.nix { };
+            llvm-mos-sdk = call ./toolchain/llvm-mos-sdk.nix { };
+            mos-toolchain = call ./toolchain/mos-toolchain.nix { };
+            rust-mos-src = call ./toolchain/rust-mos-src.nix { };
+            rust-mos = call ./toolchain/rust-mos.nix { };
+            check-vendor = call ./toolchain/check-vendor.nix { };
           };
         in
         {
@@ -66,7 +66,7 @@
           p = self.packages.${pkgs.stdenv.hostPlatform.system};
         in
         {
-          rainbow-border = pkgs.callPackage ./nix/check-rainbow-border.nix {
+          c64-hello-world = pkgs.callPackage ./c64/check.nix {
             inherit (p) rust-mos rust-mos-src mos-toolchain check-vendor;
           };
         }
@@ -133,7 +133,7 @@
               esac
 
               echo "rust-mos $(rustc --version 2>/dev/null) | targets: $RUST_TARGET_PATH"
-              echo "build:   cargo build --release --target mos-c64-none -Zbuild-std=core,alloc"
+              echo "build:   cd into a platform crate (e.g. c64/examples/hello-world) and run 'cargo build'"
             '';
           };
         }

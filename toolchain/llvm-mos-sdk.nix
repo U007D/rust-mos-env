@@ -65,7 +65,7 @@ stdenv.mkDerivation {
   # The SDK installs per-platform driver wrappers (mos-c64-clang, mos-nes-clang,
   # …) as relative symlinks to `mos-clang`, which lives in llvm-mos, not here.
   # Standalone they dangle by design — they resolve once this package is used
-  # alongside llvm-mos (the combined toolchain in check-prg.nix / the devShell).
+  # alongside llvm-mos (the combined toolchain in c64/check.nix / the devShell).
   # nixpkgs' default broken-symlink fixup check would otherwise fail the build.
   dontCheckForBrokenSymlinks = true;
 

@@ -14,4 +14,4 @@ xtask = "run --manifest-path xtask/Cargo.toml --"
 # PATH (see flake.nix), which cargo runs for `cargo xasm` from any crate
 # directory. There are likewise no `xbuild`/`xcheck` aliases: a C64 crate that
 # ships `.cargo/config.toml` with `[build] target = "mos-c64-none"` (see
-# example/rainbow-border) makes plain `cargo build`/`check` target mos already.
+# c64/examples/hello-world) makes plain `cargo build`/`check` target mos already.

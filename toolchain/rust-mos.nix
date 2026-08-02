@@ -210,7 +210,7 @@ stdenv.mkDerivation {
     cp -r library "$srcdir/library"
 
     # --- mos-*-none target JSONs (RUST_TARGET_PATH) ------------------------
-    # Replica of upstream create_mos_targets.py; see nix/mos-targets.py.
+    # Replica of upstream create_mos_targets.py; see mos-targets.py.
     $out/bin/rustc --target mos-unknown-none \
       -Z unstable-options --print target-spec-json > mos-spec.json
     python3 ${./mos-targets.py} mos-spec.json $out/targets

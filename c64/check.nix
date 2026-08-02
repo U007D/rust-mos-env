@@ -1,4 +1,4 @@
-# checks.<system>.rainbow-border: build the bundled example (example/rainbow-border)
+# checks.<system>.c64-hello-world: build the bundled example (c64/examples/hello-world)
 # to a C64 PRG, fully offline, and verify:
 #   * the c_uint == 2 bytes const assert compiled (compile failure otherwise);
 #   * the output starts with the $0801 load address (01 08) the SDK's C64
@@ -18,10 +18,10 @@
   check-vendor,
 }:
 stdenv.mkDerivation {
-  pname = "rust-mos-check-rainbow-border";
+  pname = "rust-mos-check-c64-hello-world";
   version = "0.1.0";
 
-  src = ../example/rainbow-border;
+  src = ./examples/hello-world;
 
   nativeBuildInputs = [
     rust-mos
@@ -74,7 +74,7 @@ stdenv.mkDerivation {
   doCheck = true;
   checkPhase = ''
     runHook preCheck
-    prg=target/mos-c64-none/release/rainbow-border
+    prg=target/mos-c64-none/release/hello-world
     test -f "$prg" || { echo "no linked output at $prg"; ls -R target; exit 1; }
     head=$(head -c 2 "$prg" | od -An -tx1 | tr -d ' ')
     if [ "$head" != "0108" ]; then
@@ -89,9 +89,9 @@ stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
     mkdir -p $out
-    cp target/mos-c64-none/release/rainbow-border $out/rainbow-border.prg
+    cp target/mos-c64-none/release/hello-world $out/hello-world.prg
     # Keep the ELF-with-debug twin if the SDK link produced one.
-    for f in target/mos-c64-none/release/rainbow-border.elf; do
+    for f in target/mos-c64-none/release/hello-world.elf; do
       [ -f "$f" ] && cp "$f" $out/ || true
     done
     runHook postInstall

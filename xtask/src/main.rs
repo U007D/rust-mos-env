@@ -1,12 +1,12 @@
 //! Repo tasks, cargo-xtask style: `cargo xtask <task>` (alias wired in
 //! .cargo/config.toml; run from the repo root).
 //!
-//! # `cargo xtask init-buildenv`
+//! # `cargo xtask initenv`
 //!
 //! One idempotent command that gives you a working build environment: installs
 //! plain upstream Nix if it's missing (pinned NixOS/nix-installer binary,
 //! checksum-verified), generates `flake.lock` if absent, fills the `PREFETCH:`
-//! source hashes in `nix/pins.nix` if they're still placeholders, then runs the
+//! source hashes in `toolchain/pins.nix` if they're still placeholders, then runs the
 //! flake's full check (`nix flake check` — builds the toolchain and compiles a
 //! C64 program offline to prove it actually works). Pass `--build` to build just
 //! the rust-mos toolchain and skip the checks. Every step skips itself if
@@ -14,7 +14,7 @@
 //!
 //! # `cargo xtask prefetch-hashes`
 //!
-//! Pins the `PREFETCH:` placeholder hashes in `nix/pins.nix` — the standard
+//! Pins the `PREFETCH:` placeholder hashes in `toolchain/pins.nix` — the standard
 //! fixed-output-derivation workflow, automated: for each target,
 //! `nix build .#<target> --no-link` with the placeholder hash; Nix downloads
 //! the content and reports `specified: sha256-AAA… got: sha256-…`; we
@@ -47,7 +47,7 @@ use std::process::{Command, ExitCode, Stdio};
 
 /// Flake attributes to prefetch, cheap source fetches first, then the
 /// expensive vendor FODs. Each must have a matching `# PREFETCH:<name>`
-/// marker in nix/pins.nix.
+/// marker in toolchain/pins.nix.
 const TARGETS: [&str; 4] = [
     "llvm-mos-source",
     "llvm-mos-sdk-source",
@@ -87,7 +87,7 @@ const INSTALLER_SHA256: &[(&str, &str)] = &[
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
-        Some("init-buildenv") => init_buildenv(&args[1..]),
+        Some("initenv") => init_buildenv(&args[1..]),
         Some("publish-cache") => publish_cache(&args[1..]),
         Some("prefetch-hashes") => prefetch_hashes(),
         Some("asm") => asm(&args[1..]),
@@ -107,7 +107,7 @@ fn usage() {
     eprintln!("usage: cargo xtask <task>");
     eprintln!();
     eprintln!("tasks:");
-    eprintln!("  init-buildenv [--build] [--from-source]");
+    eprintln!("  initenv [--build] [--from-source]");
     eprintln!("                            install Nix if needed, then build + check the flake");
     eprintln!("                            (default runs `nix flake check`; --build builds only");
     eprintln!("                             the rust-mos toolchain, skipping the checks;");
@@ -117,7 +117,7 @@ fn usage() {
     eprintln!("                            build the toolchain and push it to a Cachix cache so");
     eprintln!("                            others download instead of rebuilding (needs");
     eprintln!("                            CACHIX_AUTH_TOKEN; --public-key wires it into flake.nix)");
-    eprintln!("  prefetch-hashes           pin the PREFETCH placeholder hashes in nix/pins.nix");
+    eprintln!("  prefetch-hashes           pin the PREFETCH placeholder hashes in toolchain/pins.nix");
     eprintln!("                            (runs `nix build`, needs network; idempotent)");
     eprintln!("  asm [FUNCTION]            show the mos assembly for the crate in the current");
     eprintln!("                            directory (with FUNCTION, only functions whose symbol");
@@ -136,7 +136,7 @@ fn repo_root() -> PathBuf {
 }
 
 // ---------------------------------------------------------------------------
-// init-buildenv
+// initenv
 // ---------------------------------------------------------------------------
 
 struct InitFlags {
@@ -187,7 +187,7 @@ fn init_buildenv(args: &[String]) -> ExitCode {
     match init_buildenv_inner(args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("ERROR [init-buildenv]: {e}");
+            eprintln!("ERROR [initenv]: {e}");
             ExitCode::FAILURE
         }
     }
@@ -220,7 +220,7 @@ fn init_buildenv_inner(args: &[String]) -> Result<(), String> {
     let lock_generated = ensure_lock(&nix, &root)?;
 
     // 3. Ensure the source hashes are filled.
-    let pins_path = root.join("nix/pins.nix");
+    let pins_path = root.join("toolchain/pins.nix");
     if !pins_path.is_file() {
         return Err(format!("{} not found", pins_path.display()));
     }
@@ -264,7 +264,7 @@ fn init_buildenv_inner(args: &[String]) -> Result<(), String> {
     // 5. If we generated anything, remind the user to commit it.
     if lock_generated || hashes_filled {
         println!();
-        println!("NOTE: flake.lock / nix/pins.nix were generated on this run. Commit the repo so");
+        println!("NOTE: flake.lock / toolchain/pins.nix were generated on this run. Commit the repo so");
         println!("      the next init finds them pinned:  git init && git add -A && git commit");
     }
 
@@ -273,20 +273,20 @@ fn init_buildenv_inner(args: &[String]) -> Result<(), String> {
     println!("Next:");
     println!("  restart your shell (the nix profile isn't on this process's PATH yet)");
     println!("  nix develop        # rust-mos rustc + its cargo + SDK on PATH");
-    println!("  cd checks/c64-prg && cargo build --release --target mos-c64-none -Zbuild-std=core,alloc");
+    println!("  cd c64/examples/hello-world && cargo build --release   # target comes from .cargo/config.toml");
     Ok(())
 }
 
 fn intel_mac_message() -> String {
     "no pinned Nix installer binary is published for Intel macOS (x86_64-darwin).\n\
-     Install Nix with the official script, then re-run `cargo xtask init-buildenv`:\n  \
+     Install Nix with the official script, then re-run `cargo xtask initenv`:\n  \
      curl -L https://nixos.org/nix/install | sh -s -- --daemon"
         .to_string()
 }
 
 fn windows_message() -> String {
     "Nix cannot install on native Windows. Install WSL2 (`wsl --install`), then run\n\
-     `cargo xtask init-buildenv` inside the WSL2 Linux shell."
+     `cargo xtask initenv` inside the WSL2 Linux shell."
         .to_string()
 }
 
@@ -481,7 +481,7 @@ fn publish_cache(args: &[String]) -> ExitCode {
 fn publish_cache_inner(args: &[String]) -> Result<(), String> {
     let opts = parse_publish_args(args)?;
     let root = repo_root();
-    let nix = find_nix().ok_or("Nix not found. Run `cargo xtask init-buildenv` first.")?;
+    let nix = find_nix().ok_or("Nix not found. Run `cargo xtask initenv` first.")?;
 
     if std::env::var_os("CACHIX_AUTH_TOKEN").is_none() {
         return Err(
@@ -585,7 +585,7 @@ fn replace_nixconfig(contents: &str, cache: &str, public_key: &str) -> Result<St
 
 fn prefetch_hashes() -> ExitCode {
     let root = repo_root();
-    let pins_path = root.join("nix/pins.nix");
+    let pins_path = root.join("toolchain/pins.nix");
     if !pins_path.is_file() {
         eprintln!("ERROR: {} not found", pins_path.display());
         return ExitCode::FAILURE;
@@ -593,7 +593,7 @@ fn prefetch_hashes() -> ExitCode {
     let nix = match find_nix() {
         Some(n) => n,
         None => {
-            eprintln!("ERROR: Nix not found. Install it or run `cargo xtask init-buildenv`.");
+            eprintln!("ERROR: Nix not found. Install it or run `cargo xtask initenv`.");
             return ExitCode::FAILURE;
         }
     };

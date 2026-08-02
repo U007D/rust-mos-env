@@ -1,10 +1,39 @@
-# rust-mos C64 toolchain (Nix flake)
+# rust-mos-env — 6502 toolchain + platform builds (Nix flake)
 
-Builds the [rust-mos](https://github.com/mrk-its/rust-mos) toolchain — rustc 1.87.0-dev
-with the LLVM-MOS 6502 backend — from source with Nix. No containers.
+Builds the [rust-mos](https://github.com/mrk-its/rust-mos) toolchain — rustc 1.87.0-dev with
+the LLVM-MOS 6502 backend — from source with Nix, and uses it to build programs for specific
+6502 platforms. No containers.
+
+The toolchain is shared across all 6502 platforms; platform-specific programs and their checks
+live in their own top-level folder. Today that is `c64/` (Commodore 64); the layout leaves room
+to add others (`a800xl/`, `nes/`, …) beside it without touching the toolchain build.
 
 Built and tested on `aarch64-darwin` (Apple Silicon). Also configured for `x86_64-linux`,
 `aarch64-linux`, and `x86_64-darwin`, but those have not been built here yet.
+
+## Repository layout
+
+```
+rust-mos-env/
+├── flake.nix            # outputs: toolchain packages + per-platform checks + dev shell
+├── flake.lock           # nixpkgs pinned to an exact commit
+├── .cargo/config.toml   # `cargo xtask` alias (repo tasks)
+├── xtask/               # repo tasks: initenv, prefetch-hashes, publish-cache, asm
+├── toolchain/           # SHARED 6502 toolchain build (all platforms)
+│   ├── rust-mos.nix         # rustc/cargo fork: configure.py + x.py build/install
+│   ├── rust-mos-src.nix     # vendored deps: rust-mos + submodules
+│   ├── llvm-mos.nix         # LLVM with the 6502 backend (mrk-its fork)
+│   ├── llvm-mos-sdk.nix     # platform SDK (per-platform runtime + linker config)
+│   ├── mos-toolchain.nix    # per-platform mos-clang wrapper scripts
+│   ├── mos-targets.py       # generates the mos-*-none.json target specs
+│   ├── stage0.nix           # pinned beta rustc/cargo bootstrap tarballs
+│   ├── check-vendor.nix     # vendored compiler_builtins for offline -Zbuild-std
+│   └── pins.nix             # single source of truth: pinned commits + source-fetch hashes
+└── c64/                 # Commodore 64 platform (add a800xl/, nes/, … beside it)
+    ├── check.nix            # checks.<system>.c64-hello-world (offline PRG build)
+    └── examples/
+        └── hello-world/  # example C64 program (ships a default-target .cargo/config.toml)
+```
 
 ## Pinned versions
 
@@ -36,11 +65,11 @@ container.
 You need `git`, `curl`, and a stable Rust (any current stable — if you can run
 `cargo` you already have what's needed; otherwise install via [rustup](https://rustup.rs)).
 Your host cargo only compiles the small `xtask` helper and runs Nix; the rust-mos compiler
-itself is built by the flake. You do not install Nix yourself — `cargo xtask init-buildenv`
+itself is built by the flake. You do not install Nix yourself — `cargo xtask initenv`
 installs it for you.
 
 - **macOS**: Install the [Homebrew](https://brew.sh) package manager and use it to install `git` (`brew install git`); `curl` is already present. Install Rust with `rustup`. On Apple Silicon, Nix is installed automatically by the command below. On Intel Macs, [install Nix package manager](https://nixos.org/download/) manually first — there is no pinned installer binary for Intel macOS, so
-  `init-buildenv` prints the official install command instead of installing it.
+  `initenv` prints the official install command instead of installing it.
 - **Linux** (Debian/Ubuntu): `sudo apt install -y git curl`, then Rust via `rustup`. `sudo`
   is required — Nix installs a multi-user daemon.
 - **Windows**: Nix does not run natively. Install
@@ -50,14 +79,15 @@ installs it for you.
 ## Build
 
 ```sh
-git clone https://github.com/u007d/rust-mos-flake && cd rust-mos-flake
-# first run: ~2–4 h+ (builds and checks the front-end and back-end compilers and the SDK from source)
-cargo xtask init-buildenv
+git clone https://github.com/u007d/rust-mos-env && cd rust-mos-env
+# first run: could take ~2–4 h+ if no cached binaries available via Nix.
+# Builds and checks the front-end and back-end compilers and the SDK from source:
+cargo xtask initenv
 ```
 
-`init-buildenv` installs Nix if it is missing (a pinned, checksum-verified
+`initenv` installs Nix if it is missing (a pinned, checksum-verified
 [NixOS/nix-installer](https://github.com/NixOS/nix-installer) binary — upstream Nix),
-generates `flake.lock`, fills the source hashes in `nix/pins.nix`, then runs
+generates `flake.lock`, fills the source hashes in `toolchain/pins.nix`, then runs
 `nix flake check`, which builds the toolchain and compiles a C64 test program with it
 offline. Each step is skipped if it is already done.
 
@@ -79,10 +109,10 @@ or the date.
 ### First run: commit the generated files
 
 The first run generates `flake.lock` and fills the four `PREFETCH:` hashes in
-`nix/pins.nix`. Commit them so later runs, and other people, skip regenerating them:
+`toolchain/pins.nix`. Commit them so later runs, and other people, skip regenerating them:
 
 ```sh
-cargo xtask init-buildenv
+cargo xtask initenv
 git init && git add -A && git commit -m "Pin flake.lock and source hashes"
 ```
 
@@ -90,7 +120,7 @@ Add git after the build, not before: in a git tree Nix ignores untracked files, 
 committing afterward avoids having to `git add` before the build can see the files.
 `.gitignore` already excludes build outputs (`result`, `target/`).
 
-The hash-filling is done by `cargo xtask prefetch-hashes`, which `init-buildenv` runs
+The hash-filling is done by `cargo xtask prefetch-hashes`, which `initenv` runs
 automatically; run it directly only to refresh hashes without a full build. It runs
 `nix build`, reads each `got: sha256-…` mismatch, writes the hash onto the matching
 `PREFETCH:` line, and rebuilds to verify. Nix identifies fixed-output derivations by their
@@ -100,7 +130,8 @@ use it — which is several GB of downloads. The stage0 tarball hashes are pinne
 
 ## Building C64 programs
 
-A worked example is included at `example/rainbow-border` (it cycles the C64 border color).
+A worked example is included at `c64/examples/hello-world` (it prints `Hello, C64 world, from
+Rust!` via the SDK's libc, then cycles the C64 border color).
 `nix develop` starts a shell with the toolchain on `PATH` — rust-mos `rustc`, its `cargo`,
 and the SDK.
 
@@ -114,13 +145,13 @@ target = "mos-c64-none"
 build-std = ["core", "alloc"]
 ```
 
-so inside the dev shell you build with plain cargo — no per-command flags:
+so inside the dev shell you build for the C64 with plain `cargo`:
 
 ```sh
 nix develop
-cd example/rainbow-border
+cd c64/examples/hello-world
 cargo build --release
-# -> target/mos-c64-none/release/rainbow-border
+# -> target/mos-c64-none/release/hello-world
 #    a .prg file: 2-byte $0801 load address + BASIC SYS stub, from the SDK's C64 linker
 ```
 
@@ -128,8 +159,7 @@ cargo build --release
 checks against `mos-c64-none` rather than your host.
 
 Run it in the VICE emulator (`nix shell nixpkgs#vice`):
-`x64sc target/mos-c64-none/release/rainbow-border`. To make `cargo run` launch VICE, set a
-`runner` in the crate's `.cargo/config.toml` (a commented example is there).
+`x64sc target/mos-c64-none/release/hello-world`.
 
 To build your own program, copy that `.cargo/config.toml` into your crate and build the same
 way inside `nix develop`. Without the config — or from a crate that doesn't set a default
@@ -141,7 +171,7 @@ and `RUST_TARGET_PATH`); a plain `cargo build` outside it targets your host and 
 ### Using `alloc`
 
 `-Zbuild-std=core,alloc` compiles the `alloc` crate, but its heap types (`Box`, `Vec`,
-`String`) also need a global allocator. `rainbow-border` never allocates, so none is linked;
+`String`) also need a global allocator. `hello-world` never allocates, so none is linked;
 to allocate, wire one to the SDK's `malloc`:
 
 ```rust
@@ -175,7 +205,7 @@ contains that text (a substring match, so a short Rust name matches its mangled 
 
 ```sh
 nix develop
-cd example/rainbow-border
+cd c64/examples/hello-world
 cargo xasm            # whole crate
 cargo xasm main       # just `main`
 ```
@@ -199,10 +229,10 @@ approaches cover testing:
   memory layout differs — so this validates logic, not hardware behavior.
 - **On-target tests in an emulator.** Build a small program that exercises the code and
   signals pass/fail (write a byte to a known address, or use the SDK exit path), run it
-  headless in VICE (`x64sc`), and check the result. `checks.<system>.rainbow-border` is a
+  headless in VICE (`x64sc`), and check the result. `checks.<system>.c64-hello-world` is a
   minimal instance of this pattern.
 
-(Running `cargo test` inside `example/rainbow-border` would try to build the test harness for
+(Running `cargo test` inside `c64/examples/hello-world` would try to build the test harness for
 mos and fail, since that crate defaults to `target = mos-c64-none`. It is `#![no_std]
 #![no_main]`, so it has no host tests anyway.)
 
@@ -211,8 +241,8 @@ The dev shell sets `RUST_TARGET_PATH` (the generated `mos-*-none.json` target sp
 shadows the mos one — a stock cargo would resolve the wrong `compiler_builtins` under
 `-Zbuild-std`.
 
-`nix flake check` builds the whole toolchain and runs `checks.<system>.rainbow-border`, which
-compiles `example/rainbow-border` offline, asserts `size_of::<core::ffi::c_uint>() == 2` at
+`nix flake check` builds the whole toolchain and runs `checks.<system>.c64-hello-world`, which
+compiles `c64/examples/hello-world` offline, asserts `size_of::<core::ffi::c_uint>() == 2` at
 compile time, and checks the output begins with `01 08`.
 
 The first build is large — roughly ¾–1½ h for llvm-mos and 1–2 h for rust-mos on an M3 Max
@@ -252,30 +282,30 @@ rather than reusing a newer nixpkgs rustc: feeding a 1.86+ stage0 into a source 
 stage0 also includes the nightly `rustfmt` bootstrap expects (passed via `build.rustfmt`); it
 is a build-time-only input and nothing from it is installed.
 
-**Offline vendoring.** A git checkout of rustc has no `vendor/`. `nix/rust-mos-src.nix` is
+**Offline vendoring.** A git checkout of rustc has no `vendor/`. `toolchain/rust-mos-src.nix` is
 the only network-enabled derivation: it checks out rust-mos and the needed submodules
 (`src/tools/cargo`, `library/stdarch`, `library/backtrace`; `src/llvm-project` is stubbed),
 runs `cargo vendor --sync` over the root, `library/`, `src/tools/cargo/`, and
 `src/bootstrap/` workspaces, and records the resulting source-replacement config. Everything
-after that runs offline. `nix/rust-mos.nix` writes a `git-commit-info` file so bootstrap
+after that runs offline. `toolchain/rust-mos.nix` writes a `git-commit-info` file so bootstrap
 treats the tree as a source tarball and does not require submodules that were not vendored.
 
 **compiler_builtins 148 and 150.** `library/Cargo.toml` patches `compiler_builtins` to
 branch `mos-0.1.148`; the forked cargo additionally injects branch `mos-0.1.150` into every
 `-Zbuild-std` resolution. Both are vendored. The 148 branch reference is rewritten to a
 fixed commit during source prep; the 150 reference is vendored under its branch id
-(`nix/check-vendor.nix`), so a new push to that branch fails with a hash mismatch instead of
+(`toolchain/check-vendor.nix`), so a new push to that branch fails with a hash mismatch instead of
 silently changing the build.
 
 **c_uint.** llvm-mos' C `int` is 16-bit and the mos target sets `c_int_width = "16"`, but at
 commit `8f3a80f8` `core::ffi` declares `c_int`/`c_uint` as 32-bit (the 1.78-era fix was lost
-in a rebase). `nix/rust-mos.nix` re-applies it to `library/core/src/ffi/primitives.rs` (with
+in a rebase). `toolchain/rust-mos.nix` re-applies it to `library/core/src/ffi/primitives.rs` (with
 guards that fail the build if the file changed shape) and adds `mos` to core's `check-cfg`;
 the check crate asserts the result at compile time.
 
 **Target specs.** `mos-unknown-none` is a built-in target (`requires_lto = true`,
 `linker = mos-clang`). The per-machine specs (`mos-c64-none`, etc.) are JSON overrides —
-linker `mos-c64-clang`, vendor `c64` — generated at install time by `nix/mos-targets.py` (a
+linker `mos-c64-clang`, vendor `c64` — generated at install time by `toolchain/mos-targets.py` (a
 copy of upstream's `create_mos_targets.py`). `RUST_TARGET_PATH` points at them.
 
 **LTO.** Left on, per the target spec; without it, `core` fails on u128 codegen
@@ -284,16 +314,16 @@ copy of upstream's `create_mos_targets.py`). `RUST_TARGET_PATH` points at them.
 **llvm-mos-sdk.** Built against the Nix-built llvm-mos (`-DLLVM_MOS=…`, which skips its
 prebuilt-compiler download). Its `libclang_rt.builtins.a` is emitted with the archive symbol
 index stored as a regular member, which breaks the SDK's `llvm-ar qL` library merge;
-`nix/llvm-mos-sdk.nix` normalizes the archive in a symlink overlay so the merge succeeds.
+`toolchain/llvm-mos-sdk.nix` normalizes the archive in a symlink overlay so the merge succeeds.
 
 **Combined toolchain.** The SDK ships per-platform driver wrappers (`mos-c64-clang`, …) as
 symlinks to `mos-clang` that rely on clang auto-loading the platform config from its install
 directory. Because llvm-mos and the SDK are separate store paths, that lookup fails.
-`nix/mos-toolchain.nix` provides wrapper scripts that call `mos-clang --config <platform>.cfg`
+`toolchain/mos-toolchain.nix` provides wrapper scripts that call `mos-clang --config <platform>.cfg`
 explicitly; the dev shell and the check use it.
 
 **Shared libLLVM.** llvm-mos is built as a shared library (`--enable-llvm-link-shared`), so
-rustc loads `libLLVM.dylib` at run time. `nix/rust-mos.nix` puts it on the run path: at build
+rustc loads `libLLVM.dylib` at run time. `toolchain/rust-mos.nix` puts it on the run path: at build
 time via `DYLD_FALLBACK_LIBRARY_PATH`, and in the installed toolchain via a symlink into the
 rustc lib directory.
 
@@ -309,4 +339,4 @@ binary and is untested.
 - `packages.<system>.{llvm-mos, llvm-mos-sdk, mos-toolchain, rust-mos, default}` — plus
   plumbing attributes `stage0`, `rust-mos-src`, `check-vendor`, and `*-source`
 - `devShells.<system>.default` — the mos toolchain, with the shadowing check
-- `checks.<system>.rainbow-border` — the offline PRG check with the `c_uint` compile-time assert
+- `checks.<system>.c64-hello-world` — the offline PRG check with the `c_uint` compile-time assert
