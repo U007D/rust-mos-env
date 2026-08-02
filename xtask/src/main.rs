@@ -27,6 +27,18 @@
 //! substitution) to realize it. `rust-mos-src` downloads several GB each
 //! time; the stage0 toolchain (~400 MB) is built first automatically since
 //! the vendor step runs on the pinned beta cargo.
+//!
+//! # `asm [FUNCTION]` (run as `cargo xasm`)
+//!
+//! Show the 6502 assembly the toolchain generates for the crate in the current
+//! directory. Compiles it with `--emit asm` using the crate's own configured
+//! target and build-std, then prints the emitted `.s` — the whole crate, or, if
+//! a FUNCTION name is given, only the functions whose symbol contains that text
+//! (substring match, so a short Rust name matches its mangled symbol). It runs
+//! plain `cargo rustc`, so it must be invoked inside `nix develop`, from a C64
+//! crate. There is no native `cargo asm`; the dev shell puts a `cargo-xasm`
+//! shim on PATH so `cargo xasm` works as a subcommand from any crate directory
+//! (the `cargo xtask` alias is repo-root-only, so it can't serve this).
 
 use std::fs;
 use std::io::Write;
@@ -78,6 +90,7 @@ fn main() -> ExitCode {
         Some("init-buildenv") => init_buildenv(&args[1..]),
         Some("publish-cache") => publish_cache(&args[1..]),
         Some("prefetch-hashes") => prefetch_hashes(),
+        Some("asm") => asm(&args[1..]),
         Some(other) => {
             eprintln!("unknown task: {other}");
             usage();
@@ -94,15 +107,23 @@ fn usage() {
     eprintln!("usage: cargo xtask <task>");
     eprintln!();
     eprintln!("tasks:");
-    eprintln!("  init-buildenv [--build]   install Nix if needed, then build + check the flake");
+    eprintln!("  init-buildenv [--build] [--from-source]");
+    eprintln!("                            install Nix if needed, then build + check the flake");
     eprintln!("                            (default runs `nix flake check`; --build builds only");
-    eprintln!("                             the rust-mos toolchain, skipping the checks)");
+    eprintln!("                             the rust-mos toolchain, skipping the checks;");
+    eprintln!("                             --from-source disables binary caches — builds the");
+    eprintln!("                             whole closure, incl. nixpkgs, from source)");
     eprintln!("  publish-cache <name> [--public-key <key>]");
     eprintln!("                            build the toolchain and push it to a Cachix cache so");
     eprintln!("                            others download instead of rebuilding (needs");
     eprintln!("                            CACHIX_AUTH_TOKEN; --public-key wires it into flake.nix)");
     eprintln!("  prefetch-hashes           pin the PREFETCH placeholder hashes in nix/pins.nix");
     eprintln!("                            (runs `nix build`, needs network; idempotent)");
+    eprintln!("  asm [FUNCTION]            show the mos assembly for the crate in the current");
+    eprintln!("                            directory (with FUNCTION, only functions whose symbol");
+    eprintln!("                            contains that text). Run it inside `nix develop`, from");
+    eprintln!("                            a C64 crate — normally as `cargo xasm` (the dev shell");
+    eprintln!("                            exposes it on PATH so cargo finds it as a subcommand).");
 }
 
 /// The repo root is one level up from this crate's manifest — never derived
@@ -120,17 +141,23 @@ fn repo_root() -> PathBuf {
 
 struct InitFlags {
     build_only: bool,
+    from_source: bool,
 }
 
 fn parse_init_flags(args: &[String]) -> Result<InitFlags, String> {
     let mut build_only = false;
+    let mut from_source = false;
     for a in args {
         match a.as_str() {
             "--build" => build_only = true,
+            "--from-source" => from_source = true,
             other => return Err(format!("unknown flag: {other}")),
         }
     }
-    Ok(InitFlags { build_only })
+    Ok(InitFlags {
+        build_only,
+        from_source,
+    })
 }
 
 /// What kind of platform we're on, from the point of view of *installing* Nix.
@@ -202,9 +229,22 @@ fn init_buildenv_inner(args: &[String]) -> Result<(), String> {
     // 4. Build. Default is the fuller `nix flake check` (pit of success: it proves the
     //    toolchain can actually compile a C64 program offline). `--build` opts into just
     //    building the toolchain.
+    // --from-source disables all binary caches, so anything not already in the local
+    // /nix/store is built from source — including nixpkgs dependencies. That is a lot;
+    // warn so it's not a surprise.
+    let extra: &[&str] = if flags.from_source {
+        eprintln!(
+            "--from-source: disabling binary caches (--no-substitute). Everything not already \
+             in your /nix/store — including nixpkgs dependencies (clang, LLVM, …) — is built \
+             from source. This can take a very long time."
+        );
+        &["--no-substitute"]
+    } else {
+        &[]
+    };
     if flags.build_only {
         println!("Building the rust-mos toolchain (first build is LLVM-scale: very roughly 2-4 h)…");
-        let out = build_toolchain(&nix, &root)?;
+        let out = build_toolchain(&nix, &root, extra)?;
         println!();
         println!("Build environment ready.");
         if !out.is_empty() {
@@ -212,7 +252,9 @@ fn init_buildenv_inner(args: &[String]) -> Result<(), String> {
         }
     } else {
         println!("Building + checking the flake (`nix flake check`; first build is LLVM-scale: very roughly 2-4 h)…");
-        if !run_nix_inherit(&nix, &root, &["flake", "check"])? {
+        let mut args = vec!["flake", "check"];
+        args.extend_from_slice(extra);
+        if !run_nix_inherit(&nix, &root, &args)? {
             return Err("`nix flake check` failed".into());
         }
         println!();
@@ -723,8 +765,10 @@ fn run_nix_inherit(nix: &Path, root: &Path, args: &[&str]) -> Result<bool, Strin
 
 /// Build `.#rust-mos`, streaming logs (stderr) live while capturing the printed
 /// out-path (stdout). Returns the trimmed store path.
-fn build_toolchain(nix: &Path, root: &Path) -> Result<String, String> {
-    let out = nix_command(nix, root, &["build", ".#rust-mos", "--print-out-paths"])
+fn build_toolchain(nix: &Path, root: &Path, extra: &[&str]) -> Result<String, String> {
+    let mut args = vec!["build", ".#rust-mos", "--print-out-paths"];
+    args.extend_from_slice(extra);
+    let out = nix_command(nix, root, &args)
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
@@ -756,6 +800,150 @@ fn extract_got_hash(output: &str) -> Option<String> {
     result
 }
 
+// ---------------------------------------------------------------------------
+// asm — show the mos assembly for a C64 crate (whole crate, or one function)
+// ---------------------------------------------------------------------------
+
+struct AsmOpts {
+    /// Substring to match against function symbols; `None` prints the whole crate.
+    function: Option<String>,
+}
+
+fn parse_asm_args(args: &[String]) -> Result<AsmOpts, String> {
+    let mut function = None;
+    for a in args {
+        match a.as_str() {
+            s if s.starts_with("--") => return Err(format!("unknown flag: {s}")),
+            s if function.is_none() => function = Some(s.to_string()),
+            s => return Err(format!("unexpected argument: {s}")),
+        }
+    }
+    Ok(AsmOpts { function })
+}
+
+fn asm(args: &[String]) -> ExitCode {
+    match asm_inner(args) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("ERROR [asm]: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn asm_inner(args: &[String]) -> Result<(), String> {
+    let opts = parse_asm_args(args)?;
+
+    // Emit assembly for the crate in the current directory — cargo locates it
+    // just like `cargo build` does. We use the crate's own configured target and
+    // build-std (from its `.cargo/config.toml`), so this must run inside
+    // `nix develop`, from a C64 crate. `--emit=asm=<path>` pins the output so we
+    // don't have to know the target triple; `-Ccodegen-units=1` keeps the whole
+    // crate in that one file. Both are rustc flags, so they go after `--` and
+    // apply only to this crate, not its std deps.
+    let out = std::env::temp_dir().join(format!("cargo-xasm-{}.s", std::process::id()));
+    let emit = format!("--emit=asm={}", out.to_string_lossy());
+    let status = Command::new("cargo")
+        .args(["rustc", "--release", "--", "-Ccodegen-units=1", &emit])
+        .status()
+        .map_err(|e| {
+            format!("failed to spawn `cargo`: {e} (run this inside `nix develop`, from a crate)")
+        })?;
+    if !status.success() {
+        return Err("cross-compile failed (see cargo output above)".into());
+    }
+
+    let asm_text = fs::read_to_string(&out).map_err(|e| format!("reading {}: {e}", out.display()))?;
+    let _ = fs::remove_file(&out);
+
+    match &opts.function {
+        None => print!("{asm_text}"),
+        Some(query) => {
+            let blocks = function_blocks(&asm_text, query);
+            if blocks.is_empty() {
+                let mut names = all_function_labels(&asm_text);
+                names.sort();
+                return Err(format!(
+                    "no function symbol contains '{query}'\nfunctions found:\n  {}",
+                    names.join("\n  "),
+                ));
+            }
+            for b in blocks {
+                print!("{b}");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A first-column function label line (`main:`, `_ZN…E:`) — a symbol
+/// definition, not an indented instruction, a `.directive`, or a `.Llocal:`
+/// branch target. Returns the symbol without the trailing `:`.
+fn func_label(line: &str) -> Option<&str> {
+    let l = line.trim_end();
+    let first = l.chars().next()?;
+    if first.is_whitespace() || first == '.' || !l.ends_with(':') {
+        return None;
+    }
+    let label = &l[..l.len() - 1];
+    if label.is_empty() || label.contains(char::is_whitespace) {
+        return None;
+    }
+    Some(label)
+}
+
+/// Split the asm into (symbol, body) blocks, one per function. A block runs from
+/// its label to its `.size <name>, …` end marker (LLVM emits one per function),
+/// or to the next function label / EOF if none. Text between blocks (`.ident`,
+/// `.section`, the next symbol's `.globl`) and the file preamble are dropped —
+/// filtered output wants functions, and whole-crate output prints the raw file.
+fn split_functions(asm: &str) -> Vec<(String, String)> {
+    let mut blocks: Vec<(String, String)> = Vec::new();
+    let mut label: Option<String> = None;
+    let mut body = String::new();
+    for line in asm.lines() {
+        if let Some(next) = func_label(line) {
+            if let Some(prev) = label.take() {
+                blocks.push((prev, std::mem::take(&mut body)));
+            }
+            label = Some(next.to_string());
+        }
+        if let Some(cur) = label.clone() {
+            body.push_str(line);
+            body.push('\n');
+            if is_size_directive_for(line, &cur) {
+                blocks.push((cur, std::mem::take(&mut body)));
+                label = None;
+            }
+        }
+    }
+    if let Some(prev) = label.take() {
+        blocks.push((prev, body));
+    }
+    blocks
+}
+
+/// True for a `.size <label>, …` directive naming `label` — LLVM's per-function
+/// end marker.
+fn is_size_directive_for(line: &str, label: &str) -> bool {
+    line.trim_start()
+        .strip_prefix(".size")
+        .map(|rest| rest.trim_start().split([',', ' ', '\t']).next() == Some(label))
+        .unwrap_or(false)
+}
+
+fn function_blocks(asm: &str, query: &str) -> Vec<String> {
+    split_functions(asm)
+        .into_iter()
+        .filter(|(label, _)| label.contains(query))
+        .map(|(_, body)| body)
+        .collect()
+}
+
+fn all_function_labels(asm: &str) -> Vec<String> {
+    split_functions(asm).into_iter().map(|(l, _)| l).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -777,6 +965,51 @@ mod tests {
         assert_eq!(out.matches(PLACEHOLDER).count(), 1); // line 1 untouched
         assert!(out.lines().nth(2).unwrap().contains(got));
         assert!(out.ends_with('\n'));
+    }
+
+    #[test]
+    fn parses_asm_args() {
+        let d = parse_asm_args(&[]).unwrap();
+        assert!(d.function.is_none());
+
+        let f = parse_asm_args(&["main".to_string()]).unwrap();
+        assert_eq!(f.function.as_deref(), Some("main"));
+
+        assert!(parse_asm_args(&["--bogus".to_string()]).is_err());
+        assert!(parse_asm_args(&["a".to_string(), "b".to_string()]).is_err());
+    }
+
+    #[test]
+    fn splits_and_filters_asm_functions() {
+        // Preamble + two functions with `.size` end markers and inter-function
+        // noise; `.globl`, `.Lloop:`, `.size`, and indented instructions must not
+        // be taken for function labels, and a block must end at its `.size`.
+        let asm = "\t.text\n.globl\tmain\nmain:\n\tlda #0\n.Lloop:\n\tjmp .Lloop\n\
+                   .Lfunc_end0:\n\t.size\tmain, .Lfunc_end0-main\n\t.ident\t\"noise\"\n\
+                   _ZN3foo3barE:\n\trts\n.Lfunc_end1:\n\t.size\t_ZN3foo3barE, .Lfunc_end1-_ZN3foo3barE\n\
+                   \t.section\t\".note.GNU-stack\"\n";
+        assert_eq!(
+            all_function_labels(asm),
+            vec!["main".to_string(), "_ZN3foo3barE".to_string()],
+        );
+
+        // `main` matches only `main`, keeps its local label, ends at `.size main`,
+        // and does not sweep in the trailing `.ident`/next function.
+        let m = function_blocks(asm, "main");
+        assert_eq!(m.len(), 1);
+        assert!(m[0].contains(".Lloop:"));
+        assert!(m[0].contains(".size\tmain"));
+        assert!(!m[0].contains(".ident"));
+        assert!(!m[0].contains("_ZN3foo3barE"));
+
+        let bar = function_blocks(asm, "bar");
+        assert_eq!(bar.len(), 1);
+        assert!(bar[0].contains("_ZN3foo3barE:"));
+        assert!(bar[0].contains("rts"));
+        assert!(!bar[0].contains(".section"));
+        assert!(!bar[0].contains("main:"));
+
+        assert!(function_blocks(asm, "nope").is_empty());
     }
 
     #[test]
@@ -841,8 +1074,14 @@ mod tests {
 
     #[test]
     fn parses_init_flags() {
-        assert!(!parse_init_flags(&[]).unwrap().build_only);
+        let d = parse_init_flags(&[]).unwrap();
+        assert!(!d.build_only && !d.from_source);
         assert!(parse_init_flags(&["--build".to_string()]).unwrap().build_only);
+        let fs = parse_init_flags(&["--from-source".to_string()]).unwrap();
+        assert!(fs.from_source && !fs.build_only);
+        let both =
+            parse_init_flags(&["--build".to_string(), "--from-source".to_string()]).unwrap();
+        assert!(both.build_only && both.from_source);
         assert!(parse_init_flags(&["--bogus".to_string()]).is_err());
     }
 

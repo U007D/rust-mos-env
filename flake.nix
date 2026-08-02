@@ -76,13 +76,36 @@
         pkgs:
         let
           p = self.packages.${pkgs.stdenv.hostPlatform.system};
+
+          # The repo's xtask binary, built with stock nixpkgs Rust (it is
+          # dependency-free, std-only — nothing to vendor). Used only to back the
+          # `cargo-xasm` shim below; the host `cargo xtask` alias is unaffected.
+          xtask = pkgs.rustPlatform.buildRustPackage {
+            pname = "xtask";
+            version = "0.1.0";
+            src = ./xtask;
+            cargoLock.lockFile = ./xtask/Cargo.lock;
+          };
+
+          # `cargo <name>` runs any `cargo-<name>` on PATH, so this makes
+          # `cargo xasm [FUNCTION]` work from any crate directory in the shell —
+          # the run-from-the-crate ergonomics a cargo alias can't give (an alias
+          # resolves `--manifest-path` against the cwd, so it only works from the
+          # repo root). cargo may pass the subcommand name through as the first
+          # arg; drop a leading "xasm", then defer to xtask's asm subcommand.
+          cargo-xasm = pkgs.writeShellScriptBin "cargo-xasm" ''
+            [ "''${1:-}" = "xasm" ] && shift
+            exec ${xtask}/bin/xtask asm "$@"
+          '';
         in
         {
           default = pkgs.mkShell {
             # rust-mos FIRST: its rustc/cargo (the forked cargo) must win.
+            # cargo-xasm is a distinct binary, so it never shadows cargo.
             packages = [
               p.rust-mos
               p.mos-toolchain
+              cargo-xasm
             ];
 
             RUST_TARGET_PATH = "${p.rust-mos}/targets";

@@ -7,3 +7,11 @@
 # repo via CARGO_MANIFEST_DIR, not the cwd).
 [alias]
 xtask = "run --manifest-path xtask/Cargo.toml --"
+
+# Note: `cargo xasm` (show a C64 crate's assembly) is NOT a cargo alias. An alias
+# resolves `--manifest-path xtask/Cargo.toml` against the cwd, so it would only
+# work from the repo root. Instead the dev shell puts a `cargo-xasm` binary on
+# PATH (see flake.nix), which cargo runs for `cargo xasm` from any crate
+# directory. There are likewise no `xbuild`/`xcheck` aliases: a C64 crate that
+# ships `.cargo/config.toml` with `[build] target = "mos-c64-none"` (see
+# example/rainbow-border) makes plain `cargo build`/`check` target mos already.

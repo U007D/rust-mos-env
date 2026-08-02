@@ -1,0 +1,23 @@
+# Build this crate for the C64 by default, so plain `cargo build` / `cargo check`
+# do the right thing without extra flags. Run them from inside `nix develop`,
+# which provides the forked cargo, the `mos-c64-none` target, and
+# RUST_TARGET_PATH (where `mos-c64-none.json` lives). Outside the dev shell the
+# target can't be resolved and the build fails — that is expected.
+#
+# `-Zbuild-std` needs the nightly-channel forked cargo; core + alloc are built
+# from the toolchain's bundled rust-src (this crate has no other dependencies).
+#
+# Note: `cargo test` in this directory would inherit `target = mos-c64-none` and
+# fail (the libtest harness needs `std`, which bare-metal mos has not). Keep
+# host-testable, target-independent logic in a separate sibling lib crate and
+# `cargo test` that on the host. See the README's Testing section.
+[build]
+target = "mos-c64-none"
+
+[unstable]
+build-std = ["core", "alloc"]
+
+# `cargo run` needs an emulator to launch the PRG. With VICE installed,
+# uncomment and adjust (cargo appends the built binary's path):
+# [target.mos-c64-none]
+# runner = ["x64sc", "-autostart"]

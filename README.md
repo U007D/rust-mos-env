@@ -52,7 +52,7 @@ installs it for you.
 ```sh
 git clone https://github.com/u007d/rust-mos-flake && cd rust-mos-flake
 # first run: ~2–4 h+ (builds and checks the front-end and back-end compilers and the SDK from source)
-cargo xtask init-buildenv          
+cargo xtask init-buildenv
 ```
 
 `init-buildenv` installs Nix if it is missing (a pinned, checksum-verified
@@ -60,6 +60,17 @@ cargo xtask init-buildenv
 generates `flake.lock`, fills the source hashes in `nix/pins.nix`, then runs
 `nix flake check`, which builds the toolchain and compiles a C64 test program with it
 offline. Each step is skipped if it is already done.
+
+By default Nix uses its binary caches: before building an output, it downloads it from a
+configured cache if one has it (that is why the nixpkgs dependencies download instead of
+building; your own toolchain downloads too once you publish it — see [Binary cache](#binary-cache-cachix)).
+Two options change this:
+
+- `--build` — build only the rust-mos toolchain; skip validating it by compiling the example
+  C64 program.
+- `--from-source` — ignore the binary caches (`--no-substitute`) and compile everything not
+  already in your `/nix/store` from source, including nixpkgs dependencies. Slow. It does not
+  rebuild outputs already present locally — delete those first for a fully clean rebuild.
 
 The build is reproducible: `flake.nix` pins nixpkgs to an exact commit, and the committed
 `flake.lock` and source hashes fix every input, so the result does not depend on the machine
@@ -91,22 +102,41 @@ use it — which is several GB of downloads. The stage0 tarball hashes are pinne
 
 A worked example is included at `example/rainbow-border` (it cycles the C64 border color).
 `nix develop` starts a shell with the toolchain on `PATH` — rust-mos `rustc`, its `cargo`,
-and the SDK; build inside it with cargo, then leave the shell with `exit`:
+and the SDK.
+
+The example ships a `.cargo/config.toml` that makes cargo target the C64 by default:
+
+```toml
+[build]
+target = "mos-c64-none"
+
+[unstable]
+build-std = ["core", "alloc"]
+```
+
+so inside the dev shell you build with plain cargo — no per-command flags:
 
 ```sh
 nix develop
 cd example/rainbow-border
-cargo build --release --target mos-c64-none -Zbuild-std=core,alloc
+cargo build --release
 # -> target/mos-c64-none/release/rainbow-border
 #    a .prg file: 2-byte $0801 load address + BASIC SYS stub, from the SDK's C64 linker
 ```
 
-Run it in the VICE emulator (`nix shell nixpkgs#vice`):
-`x64sc target/mos-c64-none/release/rainbow-border`.
+`cargo check` works the same way, and rust-analyzer picks up the default target too, so it
+checks against `mos-c64-none` rather than your host.
 
-To build your own program, do the same in your own crate — `nix develop`, then
-`cargo build --release --target mos-c64-none -Zbuild-std=core,alloc` (one-shot, no
-interactive shell: `nix develop -c cargo build …`).
+Run it in the VICE emulator (`nix shell nixpkgs#vice`):
+`x64sc target/mos-c64-none/release/rainbow-border`. To make `cargo run` launch VICE, set a
+`runner` in the crate's `.cargo/config.toml` (a commented example is there).
+
+To build your own program, copy that `.cargo/config.toml` into your crate and build the same
+way inside `nix develop`. Without the config — or from a crate that doesn't set a default
+target — pass the flags explicitly instead:
+`cargo build --release --target mos-c64-none -Zbuild-std=core,alloc`. Either way, these
+settings only resolve **inside** the dev shell (it provides the forked cargo, the mos target,
+and `RUST_TARGET_PATH`); a plain `cargo build` outside it targets your host and won't work.
 
 ### Using `alloc`
 
@@ -130,11 +160,51 @@ unsafe impl GlobalAlloc for SdkMalloc {
 static ALLOC: SdkMalloc = SdkMalloc;
 ```
 
-Budget for the C64 target: it links into `0xC7FF` bytes of RAM (≈50 KB, `$0801`–`$CFFF`),
-with the stack at `$D000` growing down. A program that actually allocates is about 1414 bytes (a
-minimal one measured at 1545 bytes, vs 131 bytes with no allocator), which leaves on the
-order of ~51 KB for the heap + stack (the heap shares that space with the downward-growing stack and
+Budget for the C64 target: it links into `0xC7FF` bytes of RAM (51,199 bytes, `$0801`–`$CFFF`, inclusive),
+with the stack at `$D000` growing down. A program that actually allocates is ~1414 bytes larger (a
+minimal one measured at 1,545 bytes, vs 131 bytes with no allocator), which leaves a maximum of about 
+49,785 bytes for the heap + stack + code (the heap shares that space with the downward-growing stack and
 shrinks as your code and static data grow, so keep allocations modest).
+
+### Inspecting the generated assembly
+
+`cargo xasm [FUNCTION]` shows the 6502 assembly the toolchain produces for the crate in the
+current directory — run it inside `nix develop`, from the crate, just like `cargo build`. With
+no argument it prints the whole crate; with a name it prints only the functions whose symbol
+contains that text (a substring match, so a short Rust name matches its mangled symbol):
+
+```sh
+nix develop
+cd example/rainbow-border
+cargo xasm            # whole crate
+cargo xasm main       # just `main`
+```
+
+It compiles the crate with `--emit asm` (using the crate's configured target) and prints the
+emitted `.s`. There is no native `cargo asm`; the dev shell puts a `cargo-xasm` binary on
+PATH, which cargo runs for `cargo xasm` from any crate directory. (A cargo alias can't do
+this — it would resolve against the repo root, not the crate you're in.)
+
+### Testing
+
+`cargo test` cannot target the C64: the libtest harness needs `std`, and bare-metal mos has
+none — there is also no stdout or process exit for it to report results through. Two
+approaches cover testing:
+
+- **Host tests for portable logic.** Put target-independent logic in a separate library
+  crate — a *sibling* of your C64 crate, not a subdirectory (cargo reads `.cargo/config.toml`
+  from the directory you run in and its parents, so a subdirectory would inherit the
+  `target = mos-c64-none` default and fail), and `cargo test` it natively. Caveat: your host
+  is not a C64 — `c_int`/`c_uint` are 32-bit there vs 16-bit on mos, there is no VIC-II, and
+  memory layout differs — so this validates logic, not hardware behavior.
+- **On-target tests in an emulator.** Build a small program that exercises the code and
+  signals pass/fail (write a byte to a known address, or use the SDK exit path), run it
+  headless in VICE (`x64sc`), and check the result. `checks.<system>.rainbow-border` is a
+  minimal instance of this pattern.
+
+(Running `cargo test` inside `example/rainbow-border` would try to build the test harness for
+mos and fail, since that crate defaults to `target = mos-c64-none`. It is `#![no_std]
+#![no_main]`, so it has no host tests anyway.)
 
 The dev shell sets `RUST_TARGET_PATH` (the generated `mos-*-none.json` target specs) and
 `RUST_SRC_PATH`, puts the toolchain first on `PATH`, and warns if another rustc/cargo
