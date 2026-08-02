@@ -7,6 +7,7 @@
 # repo via CARGO_MANIFEST_DIR, not the cwd).
 [alias]
 xtask = "run --manifest-path xtask/Cargo.toml --"
+xinitenv = "xtask initenv"
 
 # Note: `cargo xasm` (show a C64 crate's assembly) is NOT a cargo alias. An alias
 # resolves `--manifest-path xtask/Cargo.toml` against the cwd, so it would only

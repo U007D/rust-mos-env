@@ -125,6 +125,29 @@
               # rustup's shims resolve via these; make sure they can't hijack
               # `cargo build` inside this shell.
               unset RUSTUP_TOOLCHAIN RUSTUP_HOME CARGO 2>/dev/null || true
+              # cargo merges .cargo/config.toml from EVERY ancestor directory, so a
+              # personal `[build] rustc-wrapper = ".../clippy-driver"` sitting anywhere
+              # above the crate (e.g. ~/Code/.cargo/config.toml) silently wraps rustc.
+              # That wrapper is a rustup shim: with RUSTUP_TOOLCHAIN unset it dispatches
+              # to the default *stable* rustc, which can't load the custom mos-c64-none
+              # target ("custom targets are unstable"). An empty env var overrides any
+              # such config and disables the wrapper for this shell.
+              export CARGO_BUILD_RUSTC_WRAPPER="" CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER=""
+
+              # macOS: VICE (x64sc) backing `cargo run` is a brew-installed GTK app.
+              # It locates its compiled GSettings schemas via XDG_DATA_DIRS, but inside
+              # `nix develop` that is narrowed to store paths, so GTK aborts at startup
+              # with "No GSettings schemas are installed" (SIGTRAP) and `cargo run` dies.
+              # Add brew's share dir (Apple Silicon /opt/homebrew, Intel /usr/local) so
+              # the emulator can launch. No-op where brew is absent (e.g. Linux, where
+              # VICE comes from nixpkgs and its schemas are already wired up).
+              if command -v brew >/dev/null 2>&1; then
+                __brew_share="$(brew --prefix)/share"
+                if [ -e "$__brew_share/glib-2.0/schemas/gschemas.compiled" ]; then
+                  export XDG_DATA_DIRS="$__brew_share:''${XDG_DATA_DIRS:-}"
+                fi
+                unset __brew_share
+              fi
 
               if ! rustc --print target-list 2>/dev/null | grep -qx 'mos-unknown-none'; then
                 echo "WARNING: the rustc on PATH is NOT rust-mos (no mos-unknown-none target)." >&2

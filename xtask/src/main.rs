@@ -10,7 +10,10 @@
 //! flake's full check (`nix flake check` — builds the toolchain and compiles a
 //! C64 program offline to prove it actually works). Pass `--build` to build just
 //! the rust-mos toolchain and skip the checks. Every step skips itself if
-//! already done, so re-running just rebuilds.
+//! already done, so re-running just rebuilds. It also makes sure the flakes
+//! feature is enabled so the `nix develop` it points you to works: a fresh
+//! install turns it on in the system nix.conf, and where Nix was already
+//! installed without it, initenv turns it on in your user nix.conf.
 //!
 //! # `cargo xtask prefetch-hashes`
 //!
@@ -41,7 +44,7 @@
 //! (the `cargo xtask` alias is repo-root-only, so it can't serve this).
 
 use std::fs;
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
@@ -58,8 +61,10 @@ const TARGETS: [&str; 4] = [
 /// `lib.fakeHash`: what an unpinned entry looks like, byte for byte.
 const PLACEHOLDER: &str = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
-/// Global flags threaded onto every `nix` call so the modern CLI works even
-/// when `nix.conf` hasn't enabled flakes (we deliberately don't edit it).
+/// Global flags threaded onto every `nix` call so initenv's own commands work
+/// even before flakes is persistently enabled. initenv also enables flakes for
+/// later manual `nix` use — in the system nix.conf on a fresh install, else in
+/// the user's nix.conf (see `ensure_flakes_enabled`).
 const NIX_EXPERIMENTAL: [&str; 2] = ["--extra-experimental-features", "nix-command flakes"];
 
 /// Pinned `NixOS/nix-installer` release. This tag also pins the upstream Nix
@@ -216,6 +221,12 @@ fn init_buildenv_inner(args: &[String]) -> Result<(), String> {
         },
     };
 
+    // 1b. Make sure the `nix develop` we recommend later works. initenv threads the
+    //     flakes flag onto its own calls, but a bare `nix develop` the user types
+    //     does not — so offer to enable flakes (asking first, since it touches the
+    //     user's global Nix config). Done up front so it isn't waiting after the build.
+    ensure_flakes_enabled(&nix, &root);
+
     // 2. Ensure flake.lock (deterministic — flake.nix pins nixpkgs to an exact rev).
     let lock_generated = ensure_lock(&nix, &root)?;
 
@@ -356,7 +367,14 @@ fn install_nix(installer_arch: &str, root: &Path) -> Result<PathBuf, String> {
 
     println!("Installing plain upstream Nix (multi-user daemon; sudo may prompt for your password)…");
     let status = Command::new(&dst)
-        .args(["install", "--no-confirm"])
+        .args([
+            "install",
+            "--no-confirm",
+            // Enable flakes in the system nix.conf at install time, so plain
+            // `nix` commands (e.g. `nix develop`) work without extra flags.
+            "--extra-conf",
+            "extra-experimental-features = nix-command flakes",
+        ])
         .status()
         .map_err(|e| format!("failed to run the Nix installer: {e}"))?;
     if !status.success() {
@@ -428,6 +446,143 @@ fn ensure_hashes(nix: &Path, root: &Path, pins_path: &Path) -> Result<bool, Stri
     }
     println!("Filling source hashes (first run only; several GB of downloads)…");
     pin_all(nix, root, pins_path)
+}
+
+/// Ensure plain `nix` commands the user runs themselves (like `nix develop`) can
+/// use flakes. If flakes is already active, do nothing. Otherwise this modifies
+/// the user's global `~/.config/nix/nix.conf`, so it always **asks first**,
+/// showing the exact file and line; declined or non-interactive → it prints the
+/// manual command and changes nothing.
+fn ensure_flakes_enabled(nix: &Path, root: &Path) {
+    let active = flakes_enabled(nix, root);
+    if active == Some(true) {
+        return;
+    }
+    let conf = match user_nix_conf() {
+        Some(c) => c,
+        None => return,
+    };
+    let existing = fs::read_to_string(&conf).unwrap_or_default();
+
+    // The line is already in the file — don't touch it. If it's there but flakes
+    // still isn't active, the machine is ignoring user config; point at the fix.
+    if conf_enables_flakes(&existing) {
+        if active == Some(false) {
+            print_untrusted_note();
+        }
+        return;
+    }
+
+    println!();
+    println!("`nix develop` needs the flakes feature, which isn't enabled on this machine.");
+    if conf.is_file() {
+        println!("initenv can add one line to your existing Nix config (it won't touch anything else):");
+    } else {
+        println!("initenv can create your Nix config with one line:");
+    }
+    println!("  file: {}", conf.display());
+    println!("  line: extra-experimental-features = nix-command flakes");
+
+    if !std::io::stdin().is_terminal() {
+        println!("(non-interactive — leaving your config untouched). To enable it yourself:");
+        print_flakes_manual(&conf);
+        return;
+    }
+    if !prompt_yes_no("Add it now? [y/N] ") {
+        println!("Left your config untouched. To enable flakes yourself:");
+        print_flakes_manual(&conf);
+        return;
+    }
+
+    let mut updated = existing;
+    if !updated.is_empty() && !updated.ends_with('\n') {
+        updated.push('\n');
+    }
+    updated.push_str("extra-experimental-features = nix-command flakes\n");
+    if let Some(dir) = conf.parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    match fs::write(&conf, updated) {
+        Ok(()) => {
+            println!("Enabled flakes in {}.", conf.display());
+            // Multi-user hosts can ignore an untrusted user's config; if so, say so.
+            if flakes_enabled(nix, root) == Some(false) {
+                print_untrusted_note();
+            }
+        }
+        Err(e) => {
+            println!("Could not write {}: {e}", conf.display());
+            print_flakes_manual(&conf);
+        }
+    }
+}
+
+/// Print the copy-paste commands to enable flakes in `conf` by hand.
+fn print_flakes_manual(conf: &Path) {
+    if let Some(dir) = conf.parent() {
+        println!("  mkdir -p {}", dir.display());
+    }
+    println!(
+        "  echo 'extra-experimental-features = nix-command flakes' >> {}",
+        conf.display()
+    );
+}
+
+/// Print the system-level (sudo) fallback for hosts that ignore user config.
+fn print_untrusted_note() {
+    println!("NOTE: flakes still isn't active for plain `nix` (this host may ignore an");
+    println!("      untrusted user's config). Enable it system-wide (needs sudo):");
+    println!("        echo 'extra-experimental-features = flakes' | sudo tee -a /etc/nix/nix.custom.conf");
+}
+
+/// Prompt on stdout and read a yes/no answer; anything not starting with y/Y is no.
+fn prompt_yes_no(prompt: &str) -> bool {
+    print!("{prompt}");
+    let _ = std::io::stdout().flush();
+    let mut line = String::new();
+    if std::io::stdin().read_line(&mut line).is_err() {
+        return false;
+    }
+    matches!(line.trim().chars().next(), Some('y' | 'Y'))
+}
+
+/// Whether `flakes` is persistently enabled for plain `nix`. Probed with only
+/// `nix-command` forced on (never `flakes`), so the result reflects the config,
+/// not our own flag. `None` if the probe couldn't run.
+fn flakes_enabled(nix: &Path, root: &Path) -> Option<bool> {
+    let out = Command::new(nix)
+        .args([
+            "--extra-experimental-features",
+            "nix-command",
+            "config",
+            "show",
+            "experimental-features",
+        ])
+        .current_dir(root)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(
+        String::from_utf8_lossy(&out.stdout)
+            .split_whitespace()
+            .any(|w| w == "flakes"),
+    )
+}
+
+/// True if the nix.conf text already turns flakes on via an
+/// `(extra-)experimental-features` line.
+fn conf_enables_flakes(contents: &str) -> bool {
+    contents.lines().any(|l| {
+        let l = l.trim();
+        (l.starts_with("experimental-features") || l.starts_with("extra-experimental-features"))
+            && l.contains("flakes")
+    })
+}
+
+fn user_nix_conf() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config/nix/nix.conf"))
 }
 
 // ---------------------------------------------------------------------------
@@ -1083,6 +1238,22 @@ mod tests {
             parse_init_flags(&["--build".to_string(), "--from-source".to_string()]).unwrap();
         assert!(both.build_only && both.from_source);
         assert!(parse_init_flags(&["--bogus".to_string()]).is_err());
+    }
+
+    #[test]
+    fn detects_flakes_in_conf() {
+        assert!(conf_enables_flakes(
+            "extra-experimental-features = nix-command flakes\n"
+        ));
+        assert!(conf_enables_flakes("experimental-features = flakes"));
+        assert!(conf_enables_flakes(
+            "max-jobs = auto\n  extra-experimental-features = flakes  \n"
+        ));
+        assert!(!conf_enables_flakes(
+            "extra-experimental-features = nix-command\n"
+        ));
+        assert!(!conf_enables_flakes("# flakes are nice\nmax-jobs = auto\n"));
+        assert!(!conf_enables_flakes(""));
     }
 
     #[test]
