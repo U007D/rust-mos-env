@@ -36,6 +36,7 @@
             rust-mos-stage0 = call ./nix/stage0.nix { };
             llvm-mos = call ./nix/llvm-mos.nix { };
             llvm-mos-sdk = call ./nix/llvm-mos-sdk.nix { };
+            mos-toolchain = call ./nix/mos-toolchain.nix { };
             rust-mos-src = call ./nix/rust-mos-src.nix { };
             rust-mos = call ./nix/rust-mos.nix { };
             check-vendor = call ./nix/check-vendor.nix { };
@@ -45,6 +46,7 @@
           inherit (toolchain)
             llvm-mos
             llvm-mos-sdk
+            mos-toolchain
             rust-mos
             ;
           default = toolchain.rust-mos;
@@ -64,8 +66,8 @@
           p = self.packages.${pkgs.stdenv.hostPlatform.system};
         in
         {
-          c64-prg = pkgs.callPackage ./nix/check-prg.nix {
-            inherit (p) rust-mos rust-mos-src llvm-mos-sdk check-vendor;
+          rainbow-border = pkgs.callPackage ./nix/check-rainbow-border.nix {
+            inherit (p) rust-mos rust-mos-src mos-toolchain check-vendor;
           };
         }
       );
@@ -80,8 +82,7 @@
             # rust-mos FIRST: its rustc/cargo (the forked cargo) must win.
             packages = [
               p.rust-mos
-              p.llvm-mos-sdk
-              p.llvm-mos
+              p.mos-toolchain
             ];
 
             RUST_TARGET_PATH = "${p.rust-mos}/targets";
@@ -91,7 +92,7 @@
               # Known footgun: a stock rustc/cargo (rustup shims, homebrew,
               # another nix shell) shadowing the mos toolchain. Force our
               # paths to the front and verify.
-              export PATH="${p.rust-mos}/bin:${p.llvm-mos-sdk}/bin:${p.llvm-mos}/bin:$PATH"
+              export PATH="${p.rust-mos}/bin:${p.mos-toolchain}/bin:$PATH"
               # rustup's shims resolve via these; make sure they can't hijack
               # `cargo build` inside this shell.
               unset RUSTUP_TOOLCHAIN RUSTUP_HOME CARGO 2>/dev/null || true

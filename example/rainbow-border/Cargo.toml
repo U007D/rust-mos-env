@@ -1,5 +1,5 @@
 [package]
-name = "c64-check"
+name = "rainbow-border"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,7 @@ edition = "2021"
 # bundled rust-src; compiler_builtins is injected by the forked cargo.
 [dependencies]
 
-# The mos target spec sets requires_lto; older generations additionally died
+# The mos target spec sets requires_lto; older toolchains additionally died
 # in core's u128 codegen without LTO (LLVM ERROR: unable to legalize ... s128)
 # and every known-good 1.87 build had LTO on. Keep it on in both profiles.
 [profile.dev]

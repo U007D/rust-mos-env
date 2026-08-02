@@ -19,15 +19,19 @@ let
   s0 = pins.stage0;
   hashes =
     s0.sha256.${triple} or (throw "rust-mos: no stage0 hashes for ${triple}");
-  component = name: hash:
+  component = name: channel: hash:
     fetchurl {
-      url = "${s0.dist}/${s0.date}/${name}-beta-${triple}.tar.xz";
+      url = "${s0.dist}/${s0.date}/${name}-${channel}-${triple}.tar.xz";
       sha256 = hash;
     };
   tarballs = [
-    (component "rustc" hashes.rustc)
-    (component "cargo" hashes.cargo)
-    (component "rust-std" hashes.rust-std)
+    (component "rustc" "beta" hashes.rustc)
+    (component "cargo" "beta" hashes.cargo)
+    (component "rust-std" "beta" hashes.rust-std)
+    # rust-mos' src/stage0 additionally pins a *nightly* rustfmt (same date);
+    # x.py's bootstrap fetches it as part of stage0. Provide it here so the
+    # sandboxed build never reaches for the network (fed via build.rustfmt).
+    (component "rustfmt" "nightly" hashes.rustfmt)
   ];
 in
 stdenv.mkDerivation {
@@ -64,6 +68,15 @@ stdenv.mkDerivation {
 
   meta = {
     description = "Pinned Rust beta bootstrap toolchain for building rust-mos (build-time only)";
-    platforms = builtins.attrNames pins.stage0.sha256;
+    # nixpkgs system doubles — NOT the rust target triples that key the hash
+    # table above. meta.platforms is matched against hostPlatform.system/.config,
+    # and Darwin's config is `arm64-apple-darwin`, not the rust
+    # `aarch64-apple-darwin`; using the doubles avoids that spelling mismatch.
+    platforms = [
+      "aarch64-darwin"
+      "x86_64-darwin"
+      "aarch64-linux"
+      "x86_64-linux"
+    ];
   };
 }

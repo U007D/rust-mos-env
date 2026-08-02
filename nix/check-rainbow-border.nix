@@ -1,5 +1,5 @@
-# checks.<system>.c64-prg: build the dependency-free check crate to a C64 PRG,
-# fully offline, and verify:
+# checks.<system>.rainbow-border: build the bundled example (example/rainbow-border)
+# to a C64 PRG, fully offline, and verify:
 #   * the c_uint == 2 bytes const assert compiled (compile failure otherwise);
 #   * the output starts with the $0801 load address (01 08) the SDK's C64
 #     link step emits ahead of the BASIC SYS stub.
@@ -14,18 +14,18 @@
   stdenv,
   rust-mos,
   rust-mos-src,
-  llvm-mos-sdk,
+  mos-toolchain,
   check-vendor,
 }:
 stdenv.mkDerivation {
-  pname = "rust-mos-check-c64-prg";
+  pname = "rust-mos-check-rainbow-border";
   version = "0.1.0";
 
-  src = ../checks/c64-prg;
+  src = ../example/rainbow-border;
 
   nativeBuildInputs = [
     rust-mos
-    llvm-mos-sdk
+    mos-toolchain
   ];
 
   # Belt and suspenders: the sandbox has no network anyway.
@@ -74,7 +74,7 @@ stdenv.mkDerivation {
   doCheck = true;
   checkPhase = ''
     runHook preCheck
-    prg=target/mos-c64-none/release/c64-check
+    prg=target/mos-c64-none/release/rainbow-border
     test -f "$prg" || { echo "no linked output at $prg"; ls -R target; exit 1; }
     head=$(head -c 2 "$prg" | od -An -tx1 | tr -d ' ')
     if [ "$head" != "0108" ]; then
@@ -89,9 +89,9 @@ stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
     mkdir -p $out
-    cp target/mos-c64-none/release/c64-check $out/c64-check.prg
+    cp target/mos-c64-none/release/rainbow-border $out/rainbow-border.prg
     # Keep the ELF-with-debug twin if the SDK link produced one.
-    for f in target/mos-c64-none/release/c64-check.elf; do
+    for f in target/mos-c64-none/release/rainbow-border.elf; do
       [ -f "$f" ] && cp "$f" $out/ || true
     done
     runHook postInstall
