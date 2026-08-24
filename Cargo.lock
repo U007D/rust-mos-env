@@ -10,8 +10,8 @@ checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 
 [[package]]
 name = "c64_pac"
-version = "0.3.1"
-source = "git+https://github.com/u007d/c64_pac#ef577b796c82437ef976c5afc76005a9dca4a641"
+version = "0.4.0"
+source = "git+https://github.com/u007d/c64_pac#38d694f3a5b3ec94cc93e38f8ff2e0ebf6d31894"
 dependencies = [
  "critical-section",
  "vcell",
@@ -230,3 +230,7 @@ checksum = "7ef64dbcc55df09c7e5a46182d181c2cfa3e925f3da937ea764728b4bbb9dcbf"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "xtask"
+version = "0.1.0"

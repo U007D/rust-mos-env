@@ -7,5 +7,3 @@ description = "Repo tasks (cargo xtask): prefetch-hashes pins the PREFETCH place
 # Deliberately dependency-free: the audit surface is src/main.rs alone.
 [dependencies]
 
-# Standalone crate; never part of any workspace.
-[workspace]

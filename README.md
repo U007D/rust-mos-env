@@ -9,7 +9,7 @@ other 6502-based targets.
 ## Quick Start
 1. `git clone https://github.com/u007d/rust-mos-env`
 2. `cd rust-mos-env`
-3. `nix develop` # or `nix develop -c <your preferred shell>`
+3. `cargo xnixdev` # enters the dev shell in the shell you ran it from; `cargo xnixdev <shell>` picks another
 4. Answer the Y/N questions.  You may download the toolchain binaries instead of building from
    scratch, depending on whether binary images for your platform have been made available.  As of
    the time of this writing, only Apple silicon images are available for download.
@@ -36,9 +36,12 @@ cd bin/hello_world && cargo xrun      # from this project's folder OR
 cargo xrun --bin hello_world          # from anywhere in the repo
 ```
 
-`nix develop` also works from anywhere in the repo: nix walks up to the flake at the root. (If
-your nix is old enough to answer "does not contain a 'flake.nix'", run `nix develop` from the
-root instead.)
+`cargo xnixdev` also works from anywhere in the repo, including inside a `bin/` project. Plain
+`nix develop` does not: nix searches upward for a `flake.nix` but stops at the enclosing git
+repository, and each `bin/` project is its own repo (see below), so from there it reports "does
+not contain a 'flake.nix'". `xnixdev` names the flake explicitly, so the search never has to
+walk. It defaults to the shell you invoked it from, discovered from the process tree rather than
+`$SHELL` — which is the login shell, and wrong whenever you are sitting in a different one.
 
 **Your projects stay yours.** `.gitignore` ignores everything under `bin/` except `hello_world`,
 so `rust-mos-env` never carries binary code but the example — your projects can live here, built

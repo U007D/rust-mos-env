@@ -3,17 +3,19 @@
 # `bin/<project>` and rename the package — the glob picks the new directory up.
 # `.gitignore` keeps every `bin/` project but `hello_world` out of this repo.
 #
-# `xtask` is absent by design: xtask/Cargo.toml declares its own `[workspace]`,
-# keeping the host tool and its lockfile separate.
+# `xtask` is a member so `cargo xtask …` works from any directory under the repo
+# root: a cargo alias resolves `--manifest-path` against the cwd, but `-p xtask`
+# resolves against the workspace. It is dependency-free, so sharing the root
+# lockfile costs nothing.
 [workspace]
 resolver = "3"
-members = ["bin/*"]
+members = ["bin/*", "xtask"]
 
 # rust-mos-env's own version — the environment: toolchain pins, flake, xtask and
 # the project scaffolding. It moved here when the root stopped being a package.
 # Projects under `bin/` version themselves; nothing inherits this by default.
 [workspace.package]
-version = "0.1.4"
+version = "0.1.5"
 
 # Cargo honours `[profile]` only in the workspace root, so these settings apply
 # to every `bin/` project.

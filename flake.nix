@@ -101,6 +101,14 @@
           xtask = pkgs.rustPlatform.buildRustPackage {
             pname = "xtask";
             version = "0.1.0";
+            # Built from ./xtask alone, with its own lockfile, even though
+            # xtask is a workspace member of the repo root (so that
+            # `cargo xtask …` works from any directory). Two reasons not to
+            # point this at the root: the root lock carries a git dependency
+            # (c64_pac) that buildRustPackage would demand an outputHashes entry
+            # for, and a repo-wide src would rebuild the cargo-x* shims on every
+            # unrelated edit. In isolation xtask has no parent workspace, so it
+            # builds as a standalone dependency-free package.
             src = ./xtask;
             cargoLock.lockFile = ./xtask/Cargo.lock;
           };

@@ -9,11 +9,17 @@
 [alias]
 # The cargo-xtask pattern (https://github.com/matklad/cargo-xtask): repo
 # automation lives in a plain Rust bin, invoked through this alias. With no
-# `[build] target` above, this correctly builds xtask for the host.
-xtask = "run --manifest-path xtask/Cargo.toml --"
+# `[build] target` above, this correctly builds xtask for the host. `-p xtask`
+# rather than `--manifest-path`: the former resolves against the workspace, so
+# every alias below works from any directory under the repo root.
+xtask = "run -p xtask --"
 # `initenv` idempotently builds the llvm-mos compiler, llvm-sdk and rust-mos so
 # you have a toolchain capable of targeting the C64. Run once; see README.md.
 xinitenv = "xtask initenv"
+# `nixdev` enters the toolchain dev shell in whatever shell you invoked it from.
+# Needed because plain `nix develop` stops its upward flake search at the
+# enclosing git repo, so it fails inside a bin/ project.
+xnixdev = "xtask nixdev"
 # `publish-toolchain-binaries` builds the toolchain outputs and pushes them to a
 # Cachix cache so others download instead of rebuilding (cache-owner, one-time).
 xpublish-toolchain-binaries = "xtask publish-toolchain-binaries"
@@ -35,8 +41,7 @@ xpublish-toolchain-binaries = "xtask publish-toolchain-binaries"
 
 # Per-machine build commands. xtask requires `--target c64|mega65` (the two
 # machines have different CPUs, linkers and emulators, so there is no safe
-# default); these aliases spell it out so you don't have to. Repo-root-only, as
-# all cargo aliases are — an alias resolves `--manifest-path` against the cwd.
+# default); these aliases spell it out so you don't have to.
 xbuild_c64 = "xtask build --target c64"
 xbuild_mega65 = "xtask build --target mega65"
 xrun_c64 = "xtask run --target c64"

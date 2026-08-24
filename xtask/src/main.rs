@@ -13,6 +13,7 @@ mod build;
 mod check;
 mod devshell;
 mod initenv;
+mod nixdev;
 mod prefetch;
 mod publish_toolchain_binaries;
 mod run;
@@ -38,36 +39,13 @@ struct Cmd {
     run: fn(&[String]) -> ExitCode,
 }
 
+/// Kept in alphabetical order: this is what `usage` prints.
 const COMMANDS: &[Cmd] = &[
-    Cmd {
-        name: "initenv",
-        summary: "install Nix if needed, then build + check the flake",
-        help: initenv::HELP,
-        run: initenv::run,
-    },
-    Cmd {
-        name: "publish-toolchain-binaries",
-        summary: "build the toolchain and push it to a Cachix cache",
-        help: publish_toolchain_binaries::HELP,
-        run: publish_toolchain_binaries::run,
-    },
-    Cmd {
-        name: "prefetch-hashes",
-        summary: "pin the PREFETCH placeholder hashes in toolchain/pins.nix",
-        help: prefetch::HELP,
-        run: prefetch::run,
-    },
     Cmd {
         name: "asm",
         summary: "show the mos assembly for the crate in the current directory",
         help: asm::HELP,
         run: asm::run,
-    },
-    Cmd {
-        name: "run",
-        summary: "build the current crate in release and launch it in its emulator",
-        help: run::HELP,
-        run: run::run,
     },
     Cmd {
         name: "build",
@@ -81,11 +59,46 @@ const COMMANDS: &[Cmd] = &[
         help: check::HELP,
         run: check::run,
     },
+    Cmd {
+        name: "initenv",
+        summary: "install Nix if needed, then build + check the flake",
+        help: initenv::HELP,
+        run: initenv::run,
+    },
+    Cmd {
+        name: "nixdev",
+        summary: "enter the toolchain dev shell using your current shell",
+        help: nixdev::HELP,
+        run: nixdev::run,
+    },
+    Cmd {
+        name: "prefetch-hashes",
+        summary: "pin the PREFETCH placeholder hashes in toolchain/pins.nix",
+        help: prefetch::HELP,
+        run: prefetch::run,
+    },
+    Cmd {
+        name: "publish-toolchain-binaries",
+        summary: "build the toolchain and push it to a Cachix cache",
+        help: publish_toolchain_binaries::HELP,
+        run: publish_toolchain_binaries::run,
+    },
+    Cmd {
+        name: "run",
+        summary: "build the current crate in release and launch it in its emulator",
+        help: run::HELP,
+        run: run::run,
+    },
 ];
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
+        // Bare `--help` is a request for the task list, not an error.
+        Some("--help" | "-h") => {
+            usage();
+            ExitCode::SUCCESS
+        }
         Some(name) => match COMMANDS.iter().find(|c| c.name == name) {
             // `cargo xtask <task> --help` prints the task's own blurb; anything
             // else (including a later `--help`) is the task's to interpret.
@@ -108,6 +121,7 @@ fn main() -> ExitCode {
 }
 
 fn usage() {
+    let aliases = task_aliases();
     eprintln!("usage: cargo xtask <task>");
     eprintln!();
     eprintln!("tasks:");
@@ -115,9 +129,51 @@ fn usage() {
     let width = COMMANDS.iter().map(|c| c.name.len()).max().unwrap_or(0);
     for c in COMMANDS {
         eprintln!("  {:<width$}  {}", c.name, c.summary);
+        if let Some(names) = aliases.get(c.name) {
+            let list: Vec<String> = names.iter().map(|n| format!("cargo {n}")).collect();
+            let label = if names.len() == 1 { "alias" } else { "aliases" };
+            eprintln!("  {:<width$}  ({label}: {})", "", list.join(", "));
+        }
     }
     eprintln!();
     eprintln!("Run `cargo xtask <task> --help` for details.");
+}
+
+/// Task name -> the `.cargo/config.toml` aliases that invoke it, so the task
+/// list can advertise `cargo xnixdev` alongside `nixdev`.
+///
+/// Parsed from the config rather than hardcoded here: an alias table in two
+/// places drifts. The grammar we need is trivial (`name = "xtask <task> …"`
+/// inside `[alias]`), so this stays dependency-free like the rest of xtask.
+/// Anything unparseable is skipped — a missing alias hint is not worth failing
+/// `--help` over.
+fn task_aliases() -> std::collections::BTreeMap<String, Vec<String>> {
+    let mut map: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    let Ok(text) = std::fs::read_to_string(repo_root().join(".cargo/config.toml")) else {
+        return map;
+    };
+    let mut in_alias = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_alias = line == "[alias]";
+            continue;
+        }
+        if !in_alias || line.starts_with('#') || line.is_empty() {
+            continue;
+        }
+        let Some((name, value)) = line.split_once('=') else { continue };
+        let mut tokens = value.trim().trim_matches('"').split_whitespace();
+        // Only aliases that delegate to a task, i.e. `xtask <task> …`; the base
+        // `xtask = "run -p xtask --"` alias delegates to nothing.
+        if tokens.next() != Some("xtask") {
+            continue;
+        }
+        if let Some(task) = tokens.next() {
+            map.entry(task.to_string()).or_default().push(name.trim().to_string());
+        }
+    }
+    map
 }
 
 /// The repo root is one level up from this crate's manifest — never derived
