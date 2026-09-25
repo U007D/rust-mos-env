@@ -35,15 +35,11 @@
 let
   triple = stdenv.hostPlatform.rust.rustcTarget;
 in
-stdenv.mkDerivation {
+stdenv.mkDerivation ({
   pname = "rust-mos";
   version = pins.rust-mos.version;
 
   src = rust-mos-src;
-
-  env = {
-    LIBZ_SYS_STATIC = "1";
-  };
 
   nativeBuildInputs = [
     python3
@@ -54,10 +50,9 @@ stdenv.mkDerivation {
     openssl
     zlib
     curl
-    llvm-mos
   ]
   ++ lib.optionals stdenv.hostPlatform.isDarwin [ libiconv ]
-  ++ lib.optionals stdenv.hostPlatform.isLinux [ stdenv.cc.cc.lib ];
+  ++ lib.optionals stdenv.hostPlatform.isLinux [ llvm-mos stdenv.cc.cc.lib ];
 
   # Everything is pre-vendored in rust-mos-src; hard-fail on any network use.
   CARGO_NET_OFFLINE = "true";
@@ -214,11 +209,11 @@ stdenv.mkDerivation {
       mkdir -p $out/lib/rustlib/${triple}/lib
       ln -s ${llvm-mos}/lib/libLLVM.dylib $out/lib/rustlib/${triple}/lib/libLLVM.dylib
     fi
-    # Linux: rustc runs below, before fixupPhase's automatic autoPatchelf
-    # call. Run it explicitly now — resolves libLLVM, libstdc++, libssl
-    # etc. from buildInputs in one pass. fixupPhase's own call afterwards
-    # is a harmless no-op re-check.
-    ${lib.optionalString stdenv.hostPlatform.isLinux "autoPatchelf $out"}
+  '' + lib.optionalString stdenv.hostPlatform.isLinux ''
+    # rustc runs below, before fixupPhase's automatic autoPatchelf call.
+    # Resolve its Linux runtime dependencies before invoking it.
+    autoPatchelf $out
+  '' + ''
 
     # --- rust-src for -Zbuild-std -----------------------------------------
     # Same content the docker image got from the rust-src dist tarball:
@@ -265,4 +260,6 @@ stdenv.mkDerivation {
       "x86_64-darwin"
     ];
   };
-}
+} // lib.optionalAttrs stdenv.hostPlatform.isLinux {
+  env.LIBZ_SYS_STATIC = "1";
+})
