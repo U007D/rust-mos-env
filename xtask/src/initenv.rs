@@ -165,9 +165,18 @@ fn init_buildenv_inner(args: &[String]) -> Result<(), String> {
         }
     } else {
         println!("Building + checking the flake (`nix flake check`; first build is LLVM-scale: very roughly 2-4 h)…");
-        let mut args = vec!["flake", "check"];
+        // `mega65-rom` is one of the flake's exported packages. Nix evaluates
+        // every exported package during `flake check`, including that unfree
+        // ROM derivation, even though it is installed separately below.
+        // Match that later install: permit the evaluation for this invocation
+        // only, without changing the user's global Nix configuration.
+        let mut args = vec!["flake", "check", "--impure"];
         args.extend_from_slice(extra);
-        if !run_nix_inherit(&nix, &root, &args)? {
+        let check_status = crate::nix_command(&nix, &root, &args)
+            .env("NIXPKGS_ALLOW_UNFREE", "1")
+            .status()
+            .map_err(|e| format!("failed to spawn `nix`: {e}"))?;
+        if !check_status.success() {
             return Err("`nix flake check` failed".into());
         }
         println!();
@@ -212,7 +221,7 @@ fn init_buildenv_inner(args: &[String]) -> Result<(), String> {
     println!("Next:");
     println!("  restart your shell (the nix profile isn't on this process's PATH yet)");
     println!("  nix develop        # rust-mos rustc + its cargo + SDK on PATH");
-    println!("  cd bin/hello_world && cargo xrun   # build the example and launch VICE");
+    println!("  cd bin/hello-world && cargo xrun   # build the example and launch VICE");
     Ok(())
 }
 

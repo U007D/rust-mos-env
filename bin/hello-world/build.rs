@@ -127,7 +127,7 @@ fn main() -> Result<()> {
     // link search path is this project's own directory.
     //
     // Nothing to do when the project has no memory.x: the SDK's own linker
-    // script already lays out a working program, which is why hello_world ships
+    // script already lays out a working program, which is why hello-world ships
     // without one. A project that must pin a symbol at a fixed address — a
     // character set at $2000, sprite data, music — supplies memory.x and the
     // `-T` below hands it to the linker.

@@ -1,8 +1,8 @@
 # The bundled example, and the template for a new project: copy this directory
 # to `bin/<project>` and rename the package below. The package name is also the
-# binary name, so `cargo xrun --bin hello_world` selects this project.
+# binary name, so `cargo xrun --bin hello-world` selects this project.
 [package]
-name = "hello_world"
+name = "hello-world"
 version = "0.1.2"
 edition = "2024"
 # Hands this project's memory.x to the linker if it has one — this project does

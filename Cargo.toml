@@ -1,7 +1,7 @@
 # The repo root is a virtual workspace: no package of its own, one member per
-# binary project under `bin/`. To add a project, copy `bin/hello_world` to
+# binary project under `bin/`. To add a project, copy `bin/hello-world` to
 # `bin/<project>` and rename the package — the glob picks the new directory up.
-# `.gitignore` keeps every `bin/` project but `hello_world` out of this repo.
+# `.gitignore` keeps every `bin/` project but `hello-world` out of this repo.
 #
 # `xtask` is a member so `cargo xtask …` works from any directory under the repo
 # root: a cargo alias resolves `--manifest-path` against the cwd, but `-p xtask`

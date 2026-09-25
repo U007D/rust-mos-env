@@ -34,7 +34,7 @@ xpublish-toolchain-binaries = "xtask publish-toolchain-binaries"
 #
 # Package selection follows cargo's rules: a `cargo x*` command run from
 # `bin/<project>` selects that project. Outside of any project directory, the
-# `--bin <project>` argument is required: `cargo xrun --bin hello_world`.
+# `--bin <project>` argument is required: `cargo xrun --bin hello-world`.
 #
 # Defining a bare `xbuild`/`xrun`/… alias here as well would shadow that shim,
 # which cargo warns about today and will reject in a future release.

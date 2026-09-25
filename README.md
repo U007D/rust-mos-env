@@ -15,25 +15,25 @@ other 6502-based targets.
    the time of this writing, only Apple silicon images are available for download.
 5. Wait while `nix` builds/downloads your 6502-specific compiler toolchain.
 6. `cargo xinitenv` # initialize the build environment, install dependencies, emulator
-7. `cd bin/hello_world && cargo xrun`
+7. `cd bin/hello-world && cargo xrun`
 8. A Commodore 64 "Hello, 16-bit world, from Rust!" application will run and appear in an emulator.
 9. Happy programming!
 
 ## Your projects: `bin/`
 
 Every binary project is its own crate under `bin/`, and the repo root is the workspace that holds
-them. The bundled example is `bin/hello_world`; to start a project of your own, copy it:
+them. The bundled example is `bin/hello-world`; to start a project of your own, copy it:
 
 ```sh
-cp -r bin/hello_world bin/my_game     # then rename the package in bin/my_game/Cargo.toml
+cp -r bin/hello-world bin/my_game     # then rename the package in bin/my_game/Cargo.toml
 ```
 
 Run the build commands from inside a project to act on that project, or name the project from
 anywhere else:
 
 ```sh
-cd bin/hello_world && cargo xrun      # from this project's folder OR
-cargo xrun --bin hello_world          # from anywhere in the repo
+cd bin/hello-world && cargo xrun      # from this project's folder OR
+cargo xrun --bin hello-world          # from anywhere in the repo
 ```
 
 `cargo xnixdev` also works from anywhere in the repo, including inside a `bin/` project. Plain
@@ -43,15 +43,15 @@ not contain a 'flake.nix'". `xnixdev` names the flake explicitly, so the search 
 walk. It defaults to the shell you invoked it from, discovered from the process tree rather than
 `$SHELL` — which is the login shell, and wrong whenever you are sitting in a different one.
 
-**Your projects stay yours.** `.gitignore` ignores everything under `bin/` except `hello_world`,
+**Your projects stay yours.** `.gitignore` ignores everything under `bin/` except `hello-world`,
 so `rust-mos-env` never carries binary code but the example — your projects can live here, built
 by the same commands, without appearing in `git status` or in a PR against this repo. Keep each
 project in a repo of its own (a nested git repo under `bin/` is fine).
 
 A project pins symbols to fixed addresses — a character set the VIC-II can see, sprite data,
 music — through its own `memory.x` linker script, which `build.rs` hands to the linker. It is
-optional, and `hello_world` has none: until something must live at a particular address, the
-SDK's own layout is enough. Copy `bin/hello_world/memory.x.example` to `memory.x` in your project
+optional, and `hello-world` has none: until something must live at a particular address, the
+SDK's own layout is enough. Copy `bin/hello-world/memory.x.example` to `memory.x` in your project
 when that day comes; the file documents both machines' memory maps.
 
 The release and dev profiles live in the root `Cargo.toml` — cargo honours `[profile]` only in
@@ -92,7 +92,7 @@ must stay committed.
 
 Fixed addresses in a project's `memory.x` are machine-specific — a MEGA65 PRG loads at `$2001`,
 inside the range a C64 program can pin data at — so a project targeting both machines must place
-sections where both maps agree. `bin/hello_world/memory.x.example` documents both maps.
+sections where both maps agree. `bin/hello-world/memory.x.example` documents both maps.
 
 ### MEGA65 ROM
 
@@ -119,7 +119,7 @@ to fall back to the Cloanto one. Verify with Xemu's log: `Closed-ROMs detected w
 920422` means you have the enhanced ROM, `910814` means you do not.
 
 Note all documented C64 registers are defined in a Peripheral Access Crate (PAC)--a hierarchy of 
-modules in the `c64_pac` crate (https://github.com/u007d/c64_pac), which `bin/hello_world` depends 
+modules in the `c64_pac` crate (https://github.com/u007d/c64_pac), which `bin/hello-world` depends
 on.
 The register/field names in the PAC are consistent with *Compute!'s Mapping the C64*.  An online 
 text version of this book can be found at https://github.com/mist64/c64ref and a `.pdf` version can 

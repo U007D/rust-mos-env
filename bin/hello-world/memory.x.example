@@ -3,7 +3,7 @@
  *
  * You need one as soon as a symbol must live at a fixed address — a character
  * set the VIC-II can see, sprite data, music. Until then the SDK's own script
- * lays out a working program, which is why hello_world ships without a
+ * lays out a working program, which is why hello-world ships without a
  * memory.x: nothing in it cares where the linker puts anything.
  *
  * `INCLUDE link.ld` pulls in the llvm-mos SDK script for whichever machine is

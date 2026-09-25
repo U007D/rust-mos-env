@@ -8,7 +8,7 @@
 #     the workaround to delete, so a stale workaround cannot outlive its cause.
 #     Nix re-runs this check when its inputs change, so the signal arrives on the
 #     toolchain bump that fixes the bug;
-#   * the bundled example (bin/hello_world) builds to a C64 PRG whose first two
+#   * the bundled example (bin/hello-world) builds to a C64 PRG whose first two
 #     bytes are the $0801 load address (01 08) the SDK's C64 link step emits
 #     ahead of the BASIC SYS stub.
 #
@@ -31,7 +31,7 @@ stdenv.mkDerivation {
   pname = "rust-mos-check-c64-hello-world";
   version = "0.1.0";
 
-  # The whole repo: hello_world is a workspace member, so its build needs the
+  # The whole repo: hello-world is a workspace member, so its build needs the
   # root Cargo.toml (profiles) and Cargo.lock alongside it. Flakes see only
   # git-tracked files, so target/ and untracked bin/ projects stay out.
   src = ./.;
@@ -206,7 +206,7 @@ stdenv.mkDerivation {
     # environment's own build rather than a variation on it.
     cargo build --release --target mos-c64-none \
       -Zbuild-std=core,alloc -Zbuild-std-features=panic_immediate_abort \
-      -p hello_world
+      -p hello-world
     runHook postBuild
   '';
 
@@ -219,7 +219,7 @@ stdenv.mkDerivation {
       test -f "$probe" || { echo "no linked output at $probe"; exit 1; }
     done
 
-    prg=target/mos-c64-none/release/hello_world
+    prg=target/mos-c64-none/release/hello-world
     test -f "$prg" || { echo "no linked output at $prg"; ls -R target; exit 1; }
     head=$(head -c 2 "$prg" | od -An -tx1 | tr -d ' ')
     if [ "$head" != "0108" ]; then
@@ -234,9 +234,9 @@ stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
     mkdir -p $out
-    cp target/mos-c64-none/release/hello_world $out/hello_world.prg
+    cp target/mos-c64-none/release/hello-world $out/hello-world.prg
     # Keep the ELF-with-debug twin if the SDK link produced one.
-    for f in target/mos-c64-none/release/hello_world.elf; do
+    for f in target/mos-c64-none/release/hello-world.elf; do
       [ -f "$f" ] && cp "$f" $out/ || true
     done
     runHook postInstall
