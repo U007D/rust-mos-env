@@ -4,7 +4,14 @@ other 6502-based targets.
 
 # AI Policy: RDT/c
 * AI was used for Research, Data and Tooling for this project.
-* All source code from this crate present in the release binary was written by humans.
+* All source code from this crate present in the release binary is created by you.
+
+## Prerequisites
+1. `rust` # Visit: https://rust-lang.org/tools/install/
+2. `nix`  # (Purely functional package manager): https://nix.dev/install-nix.html
+          # Note: The `nix` functional package manager is a fairly invasive installation
+          #       (at least on macOS).  But it provides deterministic builds and a local
+          #       build environment.
 
 ## Quick Start
 1. `git clone https://github.com/u007d/rust-mos-env`
