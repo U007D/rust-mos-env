@@ -1,0 +1,6 @@
+[build] 
+target = "mos-c64-none"
+
+[unstable] 
+build-std = ["core", "alloc"]
+build-std-features = ["panic_immediate_abort"]

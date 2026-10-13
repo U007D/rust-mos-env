@@ -15,7 +15,7 @@ members = ["bin/*", "xtask"]
 # the project scaffolding. It moved here when the root stopped being a package.
 # Projects under `bin/` version themselves; nothing inherits this by default.
 [workspace.package]
-version = "0.1.5"
+version = "0.1.6"
 
 # Cargo honours `[profile]` only in the workspace root, so these settings apply
 # to every `bin/` project.

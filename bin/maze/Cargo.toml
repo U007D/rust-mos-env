@@ -1,0 +1,12 @@
+[package]
+name = "maze"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rand = { version = "=0.8.5", default-features = false, features = ["small_rng"] }
+ufmt-stdio = "0.4.0"
+
+# `[profile]` settings live in the root workspace Cargo.toml; cargo ignores a
+# member's copy (and warns about it on every build), so this project keeps none.
+# Note this project's release build was `opt-level = "s"`; the root is 3.
