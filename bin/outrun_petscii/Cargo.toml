@@ -1,0 +1,11 @@
+[package]
+name = "outrun_petscii"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+c64_pac = { git = "https://github.com/u007d/c64_pac", version = "0.4.0", features = ["critical-section"] }
+critical-section = { version = "1", features = ["restore-state-bool"] }
+ufmt-stdio = "0.4.0"
+
+# `[profile]` settings live in the root workspace Cargo.toml
