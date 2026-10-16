@@ -1,5 +1,5 @@
-#![feature(start)]
 #![no_std]
+#![no_main]
 
 mod color;
 mod component;
@@ -8,14 +8,12 @@ mod panic;
 
 use core::ptr::write_volatile;
 
-// use ufmt_stdio::{print, ufmt};
-
 use color::Color;
 use component::{Cia1, VicIi};
 use joystick::Joystick;
 
-#[start]
-pub fn main(_argc: isize, _argv: *const *const u8) -> isize {
+#[unsafe(no_mangle)]
+extern "C" fn main(_argc: isize, _argv: *const *const u8) -> isize {
     let joy_1 = Joystick::new(Cia1::PortB);
 
     loop {
